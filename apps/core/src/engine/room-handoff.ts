@@ -1,7 +1,9 @@
 // A room's turn has no tools (D-041). When the owner asks there for something that needs them, the room's agent says it
 // is on its way and ends its answer with HANDOFF: APX takes that line out of what is posted and hands the owner's own
-// message (never the model's words, never a member's) to Home, where it gets done and answered in private; the words
-// stay in the room's chat. See DECISIONS.md#d-213, #d-224
+// message (never the model's words, never a member's) to the owner's account chat, where it gets done and answered
+// in private; the words stay in the room's chat. See DECISIONS.md#d-213, #d-226
+
+import { agentProject } from "../channels/agent-project.ts";
 import { ownerActsOn } from "../domain/channels.ts";
 import type { RunRecord } from "../domain/runs.ts";
 import { HOME_THREAD_ID } from "../domain/seed.ts";
@@ -41,15 +43,13 @@ export function roomHandoff(store: Store, admit: AdmitFn, log: Log, run: RunReco
   const text = rest || (owner ? (ON_ITS_WAY[lang] ?? ON_ITS_WAY.en) : "");
   const others = msg.parts.filter((p) => p.type !== "text");
   store.messages.update({ ...msg, parts: text ? [{ type: "text", text }, ...others] : others });
-  const home = store.threads.get(HOME_THREAD_ID);
-  const agent = home ? store.agents.get(home.agent_ids[0] ?? "") : undefined;
-  if (!owner || !run.input || !agent) return;
+  if (!owner || !run.input) return;
   try {
     const words = [...burstBefore(store, run.thread_id, owner.message_id), run.input.text].join("\n").slice(-4000);
-    handOn(store, admit, { owner, words, room: room.name, agentId: agent.id });
+    handOn(store, admit, { owner, words, room: room.name });
   } catch (err) {
     // The room's answer still goes out; what failed is told in the log, never in the room.
-    log.warn({ run: run.id, err: errorMessage(err, 200) }, "room request not handed to Home");
+    log.warn({ run: run.id, err: errorMessage(err, 200) }, "room request not handed to the owner chat");
   }
 }
 
@@ -81,24 +81,38 @@ function burstBefore(store: Store, threadId: string, messageId: string | undefin
 
 type ChannelOrigin = Extract<NonNullable<RunRecord["input"]>["origin"], { kind: "channel" }>;
 
-function handOn(
-  store: Store,
-  admit: AdmitFn,
-  o: { owner: ChannelOrigin; words: string; room: string; agentId: string },
-) {
+function handOn(store: Store, admit: AdmitFn, o: { owner: ChannelOrigin; words: string; room: string }) {
   const { owner, words } = o;
-  const agent = store.agents.get(o.agentId);
-  if (!agent) return;
   const cfg = store.settings.read("channels").find((c) => c.id === owner.channel);
+  if (!cfg) return;
+  const address = store.persons.ownerAddress(cfg.id)?.external_id;
+  if (!address) return;
+  const thread =
+    cfg.owner_thread === "home"
+      ? store.threads.get(HOME_THREAD_ID)
+      : (store.threads.byConversation(cfg.id, address) ??
+        store.threads.create({
+          kind: "channel",
+          title: cfg.label,
+          agent_ids: [cfg.agent_id],
+          project_id: agentProject(store, cfg.agent_id),
+          channel: { id: cfg.id, conversation: address, person_id: owner.person_id },
+        }));
+  if (!thread) return;
+  const agent = store.agents.get(thread.agent_ids[0] ?? "");
   const label = inlineName(cfg?.label ?? owner.channel);
   const where = `#${inlineName(o.room)} (a public room on ${label})`;
-  // Answers go where the owner hears from Home, never back to the room.
-  const reply_to = store.threads.context(HOME_THREAD_ID).reply_to;
+  // The room never receives the result; the account's owner chat does.
+  const reply_to =
+    thread.kind === "home"
+      ? store.threads.context(HOME_THREAD_ID).reply_to
+      : { channel: cfg.id, conversation: address };
+  if (!agent) return;
   const channel = { id: owner.channel, conversation: owner.conversation, person_id: owner.person_id, name: owner.name };
   if (!ownerActsOn(cfg?.type)) {
     // As the owner's words on that channel anywhere else: the super-agent checks them first (DECISIONS.md#d-144).
     relayOwnerWords(store, admit, {
-      threadId: HOME_THREAD_ID,
+      threadId: thread.id,
       agent,
       channel,
       text: words,
@@ -107,10 +121,9 @@ function handOn(
     });
     return;
   }
-  // The words stay in the room's chat, where they were said: Home's turn carries them, no message of its own
-  // (DECISIONS.md#d-224).
+  // The words stay in the room's chat; the private turn carries them without making a second owner message.
   admit({
-    thread_id: HOME_THREAD_ID,
+    thread_id: thread.id,
     agent_id: agent.id,
     trigger: "user",
     origin: { kind: "user" },
@@ -119,5 +132,6 @@ function handOn(
       words,
       "Do it here. Your answer reaches them privately, never in that room unless they ask you to post there.",
     ].join("\n\n"),
+    ...(reply_to ? { reply_to } : {}),
   });
 }

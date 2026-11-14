@@ -54,6 +54,9 @@ import {
   sealedWeb,
 } from "./audience.ts";
 import { gitChanges, gitSnapshot, turnChanges } from "./changes.ts";
+import { SERVICE_REVIEW_PROMPT } from "./channel-review.ts";
+import { channelService, serviceEnabled } from "./channel-service.ts";
+import { channelServicePrompt } from "./channel-service-prompt.ts";
 import { memoryQuery, recallChats } from "./chat-recall.ts";
 import {
   agentsMdOf,
@@ -81,9 +84,6 @@ import {
 import { type Caller, type DelegateTo, resultCard } from "./delegation.ts";
 import { type Display, openDisplay } from "./display.ts";
 import { createExecutor, type Executor } from "./executor.ts";
-import { SERVICE_REVIEW_PROMPT } from "./channel-review.ts";
-import { channelService, serviceEnabled } from "./channel-service.ts";
-import { channelServicePrompt } from "./channel-service-prompt.ts";
 import { flowEditorBlock } from "./flow-editor.ts";
 import type { Hooks } from "./hooks.ts";
 import type { Inputs } from "./inputs.ts";
@@ -614,9 +614,10 @@ async function buildContext(deps: TurnDeps, turn: Turn, run: RunRecord, mode: Au
             computer,
             release: ownerTurn ? releaseBlock(store.threads.context(thread.id).release) : undefined,
             feedback: o.kind === "routine" ? ratingNote(store, `routine:${o.name}`) || undefined : undefined,
-            // The owner's channel lands in Home: what went out on it meanwhile is what they may be answering.
+            // The owner's channel chat can receive a question from another chat while this one is idle.
             meanwhile:
-              thread.kind === "home" && (o.kind === "user" || (o.kind === "channel" && o.role === "owner"))
+              (thread.kind === "home" || (thread.kind === "channel" && turn.audience.kind === "owner")) &&
+              (o.kind === "user" || (o.kind === "channel" && o.role === "owner"))
                 ? sentMeanwhile(store, thread.id, run.id)
                 : undefined,
             lastTalk:
@@ -663,12 +664,14 @@ function sectionsFor(deps: TurnDeps, turn: Turn, mode: Autonomy): Sections {
   const contact = audience.kind === "contact";
   const on = store.settings.read("channels").filter((c) => c.enabled);
   const typeOf = (id: string) => on.find((c) => c.id === id)?.type ?? id;
-  // A contact's chat hears from its own channel; Home from every one the owner writes on.
+  // A channel chat hears its own channel; Home hears from every one the owner writes on.
   const types = contact
     ? [typeOf(thread.channel?.id ?? "")]
     : thread.kind === "home"
       ? [...new Set([...on.map((c) => c.type), ...(store.settings.read("imessage").on ? ["imessage"] : [])])]
-      : [];
+      : thread.kind === "channel" && thread.channel
+        ? [typeOf(thread.channel.id)]
+        : [];
   const chats = types.filter((t) => CHAT_CHANNELS.has(t));
   // A contact with no tools makes no call that could wait for the owner.
   const acts = !contact || turn.web || contactToolNames(contactHolder(audience)).size > 0;

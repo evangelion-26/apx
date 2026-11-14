@@ -54,6 +54,7 @@ async function settled(send: () => unknown): Promise<void> {
 const texts = (list: Array<{ body: Record<string, unknown> }>) => list.map((m) => String(m.body.text ?? ""));
 const home = () => env.core.store.messages.list(HOME_THREAD_ID);
 const homeSays = (s: string) => home().some((m) => m.parts.some((p) => p.type === "text" && p.text.includes(s)));
+const ownerChat = (channel: string, address: string) => env.core.store.threads.byConversation(channel, address);
 
 before(async () => {
   tg = await fakeTelegram(TG_TOKEN);
@@ -112,7 +113,7 @@ test("a HANDOFF last line is read with markdown around it and taken out", () => 
   assert.equal(handoffAnswer("Say HANDOFF to me"), undefined);
 });
 
-test("the owner's request in a group is done in Home and answered in private, never in the group", async () => {
+test("the owner's request in a group is done in that account's private chat, never in the group", async () => {
   await settled(() => tg.message(OWNER_TG, "please file the report", { id: GROUP, type: "supergroup", title: "Acme" }));
   await waitFor(() => texts(tg.messagesTo(OWNER_TG.id)).includes("Report filed."), "the result in the owner's chat");
   const group = texts(tg.messagesTo(GROUP));
@@ -127,8 +128,10 @@ test("the owner's request in a group is done in Home and answered in private, ne
         .some((m) => m.parts.some((p) => p.type === "text" && p.text === "please file the report")),
     "the owner's words in the group's chat",
   );
+  const privateChat = ownerChat("tg", String(OWNER_TG.id));
+  assert.ok(privateChat);
   const run = env.core.store.runs
-    .list(HOME_THREAD_ID, 20)
+    .list(privateChat.id, 20)
     .find((r) => r.input?.origin.kind === "user" && r.input.text.includes("please file the report"));
   assert.match(run?.input?.text ?? "", /#Acme team \(a public room on /);
 });
@@ -144,7 +147,10 @@ test("a member's message never becomes a request, even when the room answer says
 
 test("on Discord the owner's words from a room go through the super-agent's check, and the result comes in private", async () => {
   await settled(() => dc.message(OWNER_DC, "check the deploy please", { room: ROOM }));
-  await waitFor(() => texts(tg.messagesTo(OWNER_TG.id)).includes("Deploy checked: all green."), "the checked result");
+  await waitFor(
+    () => dc.messagesTo(OWNER_DC.id).some((m) => m.body.content === "Deploy checked: all green."),
+    "the checked result",
+  );
   // The answer was only the line: the room hears it is on its way, in the owner's language.
   assert.deepEqual(
     dc.messagesTo(ROOM).map((m) => m.body.content),
@@ -152,6 +158,7 @@ test("on Discord the owner's words from a room go through the super-agent's chec
   );
   const runs = env.core.store.runs.list(HOME_THREAD_ID, 50);
   assert.ok(!runs.some((r) => r.input?.origin.kind === "user" && r.input.text.includes("check the deploy")));
+  assert.ok(ownerChat("dc", OWNER_DC.id), "the check returns to Discord's private owner chat");
   // The words stay in the room's chat: Home never shows them as a message of its own (DECISIONS.md#d-224).
   assert.equal(homeSays("check the deploy please"), false);
   const room = env.core.store.threads.byConversation("dc", ROOM);
@@ -167,7 +174,7 @@ test("on Discord the owner's words from a room go through the super-agent's chec
   assert.match(String(check?.messages.at(-1)?.content), /trust="untrusted"/);
 });
 
-test("the owner's quick messages before the one answered go to Home with it, in order", async () => {
+test("the owner's quick messages before the one answered go to the private account chat in order", async () => {
   const group = { id: GROUP, type: "supergroup", title: "Acme" };
   const armed = timers.armed();
   tg.message(OWNER_TG, "the invoice is for Northwind", group);
@@ -176,8 +183,10 @@ test("the owner's quick messages before the one answered go to Home with it, in 
   await waitFor(() => timers.armed() >= armed + 2, "the second one restarts the wait");
   timers.tick(BURST);
   await waitFor(() => texts(tg.messagesTo(OWNER_TG.id)).includes("Report filed for Northwind."), "done with both");
+  const privateChat = ownerChat("tg", String(OWNER_TG.id));
+  assert.ok(privateChat);
   const run = env.core.store.runs
-    .list(HOME_THREAD_ID, 50)
+    .list(privateChat.id, 50)
     .find((r) => r.input?.origin.kind === "user" && r.input.text.includes("so file the report with it"));
   assert.match(run?.input?.text ?? "", /the invoice is for Northwind\nso file the report with it/);
 });

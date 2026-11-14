@@ -49,7 +49,7 @@ test("the core names a new account and gives it what every account starts with",
   const made = second.channels.find((c) => c.id === first.id);
   assert.deepEqual(
     [made?.label, made?.agent_id, made?.strangers, made?.concurrency, made?.owner_thread, made?.self_owner],
-    ["WhatsApp", "superagent", "pair", "steer", "home", false],
+    ["WhatsApp", "superagent", "pair", "steer", "own", false],
   );
   assert.equal(second.channels.find((c) => c.id === second.id)?.label, "Shop");
   const third = await env.client.call("channels.add", { type: "whatsapp" });

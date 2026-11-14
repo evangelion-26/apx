@@ -228,8 +228,8 @@ test("a Telegram approval resumed after restart retains its destination and chan
   assert.equal(f.env.core.store.inputs.pending(f.account).length, 0);
 });
 
-// What comes later follows the owner, the app too (DECISIONS.md#d-224).
-test("a late delegation result stays in the app after the owner writes there", async (t) => {
+// A channel account keeps its own destination for work started there (DECISIONS.md#d-224).
+test("a late delegation result returns to its channel after the owner writes in the app", async (t) => {
   let release = () => {};
   const report = new Promise<void>((resolve) => {
     release = resolve;
@@ -259,15 +259,16 @@ test("a late delegation result stays in the app after the owner writes there", a
   await f.env.settle(f.account);
   release();
   await waitFor(
-    () => f.env.core.store.runs.list("home").some((r) => r.trigger === "a2a_result" && r.state === "completed"),
+    () => f.env.core.store.runs.list(f.account).some((r) => r.trigger === "a2a_result" && r.state === "completed"),
     "late result",
     { ms: 6000 },
   );
-  await f.env.settle("home");
-  const result = f.env.core.store.runs.list("home").find((r) => r.trigger === "a2a_result");
-  assert.equal(result?.input?.reply_to, null, "answered in the app");
+  await f.env.settle(f.account);
+  const result = f.env.core.store.runs.list(f.account).find((r) => r.trigger === "a2a_result");
+  assert.deepEqual(result?.input?.reply_to, { channel: "tg", conversation: String(OWNER.id) });
+  await waitFor(() => f.tg.messagesTo(OWNER.id).some((m) => m.body.text === "Research complete"), "late answer");
   assert.deepEqual(
     f.tg.messagesTo(OWNER.id).map((m) => m.body.text),
-    ["Research started"],
+    ["Research started", "Research complete"],
   );
 });

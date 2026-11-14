@@ -6,8 +6,7 @@ import type { PaneProps } from "./types.ts";
 
 /**
  * Who answers: the agent the owner talks to here (the super-agent, always first, or a project's head, found by project
- * in the picker), where the owner's words go (Home is the super-agent's conversation, so another agent answers in this
- * account's own chat), and who answers the contacts and rooms.
+ * in the picker), whose own account chat holds the owner's words, and who answers the contacts and rooms.
  */
 export function AnswerPane({ channel, draft, set }: Pick<PaneProps, "channel" | "draft" | "set">) {
   const t = useT();

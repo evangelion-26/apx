@@ -404,7 +404,9 @@ export function sectionLines(s: Sections, workspace = ""): string[] {
             ? [`- When your owner writes on whatsapp: ${ownerChannelNote("whatsapp", s.service)}`]
             : []),
           ...(others.length
-            ? [`- When your owner writes on ${others.join(" or ")}: ${ownerChannelNote(others.join(" or "), s.service)}`]
+            ? [
+                `- When your owner writes on ${others.join(" or ")}: ${ownerChannelNote(others.join(" or "), s.service)}`,
+              ]
             : []),
           ...(s.voice ? [`- When the context says voice: ${VOICE_STYLE}`] : []),
           ...(s.stickers ? [`- ${STICKER_NOTE}`] : []),

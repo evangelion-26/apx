@@ -83,6 +83,11 @@ const refusing: ChannelAdapter = {
 
 let env: Awaited<ReturnType<typeof startCore>>;
 let tg: Awaited<ReturnType<typeof fakeTelegram>>;
+const ownerChat = (id = OWNER.id) => {
+  const chat = env.core.store.threads.byConversation("tg", String(id));
+  assert.ok(chat, "the owner's Telegram account chat exists");
+  return chat.id;
+};
 
 before(async () => {
   tg = await fakeTelegram(TOKEN);
@@ -114,7 +119,7 @@ test("formatting: Markdown becomes Telegram HTML; contacts never get paths or ke
   for (const p of parts) assert.equal((p.match(/`{3}/g)?.length ?? 0) % 2, 0, "every part has whole code blocks");
 });
 
-test("a stranger gets a code; the owner approves it as themselves; then their words reach Home and the answer returns", async () => {
+test("a stranger gets a code; the owner approves it as themselves; then their words reach the account chat", async () => {
   const info = (await env.client.call("channels.list", {})).channels[0];
   assert.equal(info?.account, "@apx_test_bot");
   assert.equal(info?.account_name, "Acme Desk", "the bot's own name, besides its @handle");
@@ -137,7 +142,7 @@ test("a stranger gets a code; the owner approves it as themselves; then their wo
   const reply = tg.messagesTo(OWNER.id)[1]?.body;
   assert.equal(reply?.parse_mode, "HTML");
   assert.match(String(reply?.text), /<b>there<\/b>, you said: what is up/);
-  const home = await env.client.call("threads.get", { thread: "home" });
+  const home = await env.client.call("threads.get", { thread: ownerChat() });
   assert.ok(
     home.messages.some(
       (m) => m.author.kind === "user" && m.parts.some((p) => p.type === "text" && p.text === "what is up"),
@@ -145,8 +150,8 @@ test("a stranger gets a code; the owner approves it as themselves; then their wo
   );
 
   // Written in the app, the answer stays in the app.
-  await env.client.call("threads.send", { thread: "home", text: "from the app" });
-  await env.settle("home");
+  await env.client.call("threads.send", { thread: ownerChat(), text: "from the app" });
+  await env.settle(ownerChat());
   await new Promise((r) => setTimeout(r, 150));
   assert.equal(tg.messagesTo(OWNER.id).length, 2);
 });
@@ -160,13 +165,13 @@ test("while the agent works the owner sees typing, never a streamed draft that w
 
 test("a message while the agent works joins its turn; a short stop ends it without a new one", async () => {
   const toOwner = () => tg.messagesTo(OWNER.id).map((m) => String(m.body.text));
-  const runCount = async () => (await env.client.call("threads.get", { thread: "home" })).runs.length;
+  const runCount = async () => (await env.client.call("threads.get", { thread: ownerChat() })).runs.length;
   const runsBefore = await runCount();
   tg.message(OWNER, "slow job");
   await waitFor(() => gate.waiting, "tool running");
   tg.message(OWNER, "also add the totals");
   await waitFor(async () => {
-    const home = await env.client.call("threads.get", { thread: "home" });
+    const home = await env.client.call("threads.get", { thread: ownerChat() });
     return home.messages.some((m) => m.parts.some((p) => p.type === "text" && p.text === "also add the totals"));
   }, "second message kept");
   gate.open();
@@ -181,7 +186,7 @@ test("a message while the agent works joins its turn; a short stop ends it witho
   await waitFor(() => !gate.waiting, "tool stopped");
   await new Promise((r) => setTimeout(r, 200));
   assert.deepEqual(toOwner().slice(before), ["Listo, paré."], "no half answer and no answer to the stop");
-  const after = await env.client.call("threads.get", { thread: "home" });
+  const after = await env.client.call("threads.get", { thread: ownerChat() });
   assert.equal(after.runs.length, runsBefore + 2, "the stop started no turn");
   assert.equal(after.runs[0]?.state, "canceled", "runs are newest first");
 });
@@ -352,11 +357,13 @@ test("an account approved as a contact by mistake becomes the owner's: its chat 
 
   tg.message(SECOND, "now I am the owner here");
   await waitFor(async () => {
-    const home = await env.client.call("threads.get", { thread: "home" });
+    const chat = env.core.store.threads.byConversation("tg", String(SECOND.id));
+    if (!chat) return false;
+    const home = await env.client.call("threads.get", { thread: chat.id });
     return home.messages.some((m) =>
       m.parts.some((x) => x.type === "text" && x.text.includes("now I am the owner here")),
     );
-  }, "the owner's words reach Home");
+  }, "the owner's words reach the account chat");
 });
 
 test("a removed contact who links the account again as the owner's gets the old chat as their own", async () => {
@@ -653,7 +660,7 @@ test("with no chat app for notices, the owner's chat app hears only what follows
     const before = tg.messagesTo(OWNER.id).length;
     tg.message(OWNER, "set the scene");
     await waitFor(() => tg.messagesTo(OWNER.id).length > before, "the answer to the owner's own words");
-    await env.settle("home");
+    await env.settle(ownerChat());
     // Agent changes offer a passive review in the app, without an unasked model turn.
     const told = tg.messagesTo(OWNER.id).length;
     const homeRuns = store.runs.list("home").length;

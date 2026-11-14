@@ -32,7 +32,7 @@ export type OwnerWords = {
   channel: { id: string; conversation: string; message?: string | undefined; person_id: string; name: string };
   text: string;
   attachments: Attachment[];
-  /** Said in a public room and handed on to Home (DECISIONS.md#d-213): where, and where Home's answers go meanwhile. */
+  /** Said in a public room and handed to the owner's private chat (DECISIONS.md#d-226): where and its reply address. */
   room?: { where: string; reply_to?: { channel: string; conversation: string } };
 };
 
@@ -55,7 +55,7 @@ export function relayOwnerWords(
     { from: w.channel.name, channel: label, claims: "your owner", verified: "no" },
     w.text,
   );
-  // Words handed on from a room are answered where Home is, never in the room.
+  // Words handed on from a room are answered in the owner's private chat, never in the room.
   const reply_to = w.room ? w.room.reply_to : { channel: w.channel.id, conversation: w.channel.conversation };
   return store.tx(() => {
     const message = w.room

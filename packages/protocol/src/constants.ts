@@ -44,14 +44,14 @@ export const TURN_STEPS = 150;
 /**
  * What a channel does when the owner set nothing: the agent may answer with an emoji reaction (DECISIONS.md#d-204), and
  * its sealed chats search the web only when the owner asks (DECISIONS.md#d-059). A new account also starts with a
- * pairing code for strangers, a new message slipping into the agent's work, and the owner's words in Home.
+ * pairing code for strangers, a new message slipping into the agent's work, and the owner's own account chat.
  */
 export const CHANNEL_DEFAULTS = {
   reactions: true,
   research: "owner",
   strangers: "pair",
   concurrency: "steer",
-  owner_thread: "home",
+  owner_thread: "own",
   /** Automatic answers to its contacts per hour: each one, and all together (0: no cap). */
   limits: { per_contact_hour: 20, per_account_hour: 0 },
 } as const;

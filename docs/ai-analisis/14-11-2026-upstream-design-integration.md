@@ -70,6 +70,12 @@ Por ello se usa la etiqueta local inmutable y no se afirma que se haya refrescad
   revocación durante espera, persistencia del modo y separación entre cuentas.
 - Las regresiones del chat propio pasan: el canal no puede escoger Home y un cambio de ajustes iniciado desde el
   canal conserva su tarjeta de confirmación exclusivamente en la app.
+- Tres de los cuatro shards de Windows del PR fallaban en pruebas de canales, salas y presupuesto del prompt que aún asumían
+  que el mensaje del dueño entraba en Home. La prueba local reprodujo la falla. La reparación dirige los trabajos
+  iniciados en salas al chat privado de la misma cuenta, da a ese chat las instrucciones y el contexto de canal, y
+  conserva ahí los resultados delegados. El alta de cuentas también comienza con chat propio. Las suites enfocadas
+  de salas, enrutamiento, mensajes, stickers, WhatsApp y presupuesto pasan en Windows.
+- El contrato actualizado queda registrado en D-226 y en las guías de canales y conversaciones en inglés y español.
 
 ## Decisiones pendientes del dueño
 

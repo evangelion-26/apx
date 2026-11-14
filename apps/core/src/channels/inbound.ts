@@ -137,6 +137,7 @@ export function createInbound(deps: {
     // Where the platform cannot vouch for the owner, their words only reach the super-agent to check: they answer and approve nothing here.
     const direct = owner && ownerActsOn(cfg.type);
     const thread = owner ? ownerThread(cfg, m.conversation) : contactThread(cfg, m.conversation, person);
+    if (direct) store.threads.mergeContext(thread.id, { reply_to: { channel: cfg.id, conversation: m.conversation } });
     // Silenced, or on an account that answers only the owner: kept, never answered.
     const quiet = !owner && (person.muted || cfg.owner_only === true);
     // A supervised contact costs a draft, not an answer: suggestions.ts keeps its own hourly cap.

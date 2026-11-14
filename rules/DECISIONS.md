@@ -4789,3 +4789,18 @@ the asked teammate's own leading mention goes, since the row already names them.
 
 Rejected: keeping the side opening and only marking it read (the click still showed another conversation in the
 middle), and renaming the stored titles in the core (the threads already kept would still show ids).
+
+<a id="d-226"></a>
+## D-226 — 2026-11-14 — Channel accounts keep the owner's conversation in their own chat
+The upstream integration gives each account its own owner chat, including accounts answered by the super-agent.
+This supersedes D-205's Home default for channel accounts and limits D-224's moving behavior to turns actually
+started in Home. `channels.set` and `channels.add` both save `owner_thread: "own"`. A channel message and a later
+delegated result remain in that account's chat; sending a message on another account does not move either one.
+
+A request made in a room remains in the room's history. When it needs private work, the room's agent hands the
+owner's words to that account's private owner chat. The result goes to the owner's private address on the same
+account, even when that private chat did not exist yet. On platforms that cannot verify the owner, the existing
+super-agent check still runs before the account's agent acts. A message or question another chat sent to the owner
+on that account is shown as context in the next account turn, so a reply can refer to it.
+
+Home remains the app's main conversation. It does not receive a copy of a channel account's owner messages.

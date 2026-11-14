@@ -94,7 +94,7 @@ by side**, so you can keep v1's until you are done. Pair the new one with your v
 | In v1 | In v2 |
 | --- | --- |
 | Ledgers per channel and day, session files, conversation files, code-session files | **Threads.** One place a conversation lives, with its runs (agent turns) and steps (tool calls), all in one database |
-| Super-agent and its daily channel logs | **Home**, your secretary. Its chat is one conversation everywhere; the setup wizard still calls it the super-agent |
+| Super-agent and its daily channel logs | **Home**, your secretary, is the main app chat. Each connected channel account keeps a separate conversation in its own chat; the setup wizard still calls it the super-agent |
 | The Default project | The **base project**: no folder of its own, home of Home and your global agents. It's still called Default unless you rename it |
 | Engines (LLM providers) | **Providers**, shown as engines in Settings › Engines and models. Models are named `engine/model` and a router picks one per turn |
 | Runtimes (`apx run` with Claude Code, Codex, OpenCode…) | **Harnesses**. Coding CLIs run only in their own sessions: code threads (`apx chat --code`) and **External sessions** |
