@@ -680,6 +680,7 @@ function sectionsFor(deps: TurnDeps, turn: Turn, mode: Autonomy): Sections {
     mode: acts ? mode : undefined,
     chats,
     ownerChats: contact ? [] : chats,
+    service: serviceEnabled(channelService(store, thread)?.mode),
     voice: chats.length > 0 && Boolean(store.threads.context(thread.id).voice_replies),
     stickers: chats.some((t) => store.stickers.known(t, 1).length > 0),
     computer: allowed ? (vm?.serves(thread.id) ? "chat" : thread.kind === "home" ? "home" : undefined) : undefined,
