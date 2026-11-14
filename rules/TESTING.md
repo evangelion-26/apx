@@ -96,6 +96,7 @@ pnpm --filter @apx/ui build        # design system dist/ (what web and design-sy
 ```bash
 pnpm lint                          # Biome; `pnpm lint:fix` applies safe fixes
 pnpm check:private                 # public-safe gate (AGENTS.md rule 17)
+pnpm check:decisions               # DECISIONS.md numbered and anchored, every link and D-NNN to a decision that exists
 pnpm check:commits HEAD^..HEAD     # this commit only; use a base..head range for a change, see rules/RELEASE.md
 pnpm check:schema                  # apps/core/src/db/schema.ts matches the migrations (`node apps/core/scripts/schema.ts` rewrites it)
 pnpm check:ui                      # panel screens use @apx/ui controls and tokens (AGENTS.md rule 32)
@@ -186,7 +187,7 @@ While developing against a scratch state, set `APX_HOME` to a temp dir so `~/.ap
 
 ## 5. All at once
 ```bash
-pnpm preflight                     # check:private, check:schema, lint, check:ui, check:dead, typecheck, unit tests
+pnpm preflight                     # check:private, check:decisions, check:schema, lint, check:ui, check:dead, typecheck, unit tests
 pnpm verify                        # preflight, all-suite execution coverage, then lightness budgets
 pnpm verify --stream               # the same, with every step's output as it runs
 ```
@@ -210,7 +211,10 @@ single-instance lock never touch the owner's running APX; macOS ignores `HOME` f
 served by the sandbox's core, and check the window, the browser it lends to the core as a node, and the quick chat.
 `e2e/env.ts` is a whole APX apart from the owner's: a temp home and port, `APX_SECRETS=file`, a fake
 OpenAI-compatible model (`e2e/fake-llm.ts`, answers "Got it: <what you wrote>"), an emulated Telegram Bot API
-(`APX_TELEGRAM_API`), an APX v1 and Claude Code / Codex sessions to import (`e2e/fixtures.ts`). Specs act as the
+(`APX_TELEGRAM_API`), an APX v1 and Claude Code / Codex sessions to import (`e2e/fixtures.ts`), and its own "installed"
+APX app (`e2e/fake-desktop-app.ts`): "Open desktop" records the launch and saves the connection in the sandbox, never
+opening the machine's APX app or writing its data folder ([HISTORY](HISTORY.md#e2e-desktop-handoff)); under a test
+runner `saveLocalTarget` itself refuses that folder, like the store refuses the real home. Specs act as the
 outside world through its control API (`world.telegram(...)`, `world.sentTo(chat)`). Specs run in file order on
 one core, like one owner from the first-run setup on. CI splits them into three parts (`--shard=i/3`), each on a core
 of its own, so a spec may build only on what the `setup` project leaves (`01-setup`, `06-telegram`, `10-whatsapp`,
@@ -255,7 +259,10 @@ chunk. Over budget or failing, it prints each first-load chunk's size and, with 
 with `APX_TEST_COVERAGE=1`), the five packages or files that weigh the most: split the module it names.
 Code loaded late is declared only in `apps/web/src/lazy.ts` (AGENTS.md rule 27); `biome.json` fails a first-screen
 file (`App`, `main`, `shell/`, `inbox/`, `chat/`) that imports one of its modules directly, and
-`e2e/specs/89-first-load.spec.ts` checks what opening the inbox fetches, its own late parts included.
+`e2e/specs/89-first-load.spec.ts` checks what opening the inbox fetches, its own late parts included. Strings only
+late screens show go in a language pack (`PACKS` in `apps/web/src/i18n/messages.ts`), never in the language chunk:
+the screen waits for it with `usePack`, or its `lazy.ts` loader with `withPacks`; the few keys a first-screen file also
+uses stay in the language (`*-shared-en.ts`), and `messages.test.ts` checks each pack stays out of it.
 
 ## CI
 `.github/workflows/verify.yml` runs on every push to `main` and every pull request. Every job starts from

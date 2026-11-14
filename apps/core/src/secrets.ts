@@ -113,12 +113,16 @@ export function createSecrets(
     listed(name: string): boolean {
       return Object.hasOwn(read(), name);
     },
-    /** Like resolve, but a project's own value for a `secret://` name comes first. */
-    resolveIn(ref: string | undefined, projectId: string | undefined): string | undefined {
-      if (projectId && ref?.startsWith("secret://")) {
-        const own = api.resolve(`secret://${projectSecretName(projectId, ref.slice(9))}`);
-        if (own !== undefined) return own;
-      }
+    /**
+     * Like resolve, but a project's own value for a `secret://` name comes first. Given several (a subproject and its
+     * parent: domain/projects.ts lineage), the nearest one's own value wins.
+     */
+    resolveIn(ref: string | undefined, projects: string | readonly string[] | undefined): string | undefined {
+      if (ref?.startsWith("secret://"))
+        for (const id of typeof projects === "string" ? [projects] : (projects ?? [])) {
+          const own = api.resolve(`secret://${projectSecretName(id, ref.slice(9))}`);
+          if (own !== undefined) return own;
+        }
       return api.resolve(ref);
     },
     list(): Array<{ name: string; updated_at: string; hint?: string; sites: SecretSite[]; last_used?: SecretUse }> {
@@ -150,6 +154,26 @@ export function createSecrets(
       if (!e) return;
       e.used = use;
       write(all);
+    },
+    /**
+     * Moves a stored value to another key (a project's own, or the global one), with the sites it may sign in on and
+     * its last use; the value stays inside the core. "taken" when the other key already holds one.
+     */
+    move(from: string, to: string): "moved" | "missing" | "taken" {
+      if (from === to) return Object.hasOwn(read(), from) ? "moved" : "missing";
+      const before = read();
+      if (Object.hasOwn(before, to)) return "taken";
+      const value = Object.hasOwn(before, from) ? api.resolve(`secret://${from}`) : undefined;
+      if (value === undefined) return "missing";
+      const { sites, used } = before[from] ?? {};
+      api.set(to, value);
+      const all = read();
+      const e = all[to];
+      if (e && sites) e.sites = sites;
+      if (e && used) e.used = used;
+      write(all);
+      api.set(from, null);
+      return "moved";
     },
     set(name: string, value: string | null): void {
       const all = read();

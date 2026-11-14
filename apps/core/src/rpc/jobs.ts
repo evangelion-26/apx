@@ -14,16 +14,23 @@ const newest = (a: Job, b: Job) => (b.ended_at ?? b.started_at).localeCompare(a.
 function fromOf(origin: Origin): JobFrom {
   switch (origin.kind) {
     case "agent":
+    case "delegation_result":
+      return { kind: origin.kind, name: origin.name, thread: origin.thread_id };
     case "channel":
     case "routine":
     case "task_result":
-    case "delegation_result":
     case "added":
       return { kind: origin.kind, name: origin.name };
     case "delegation_results":
       return { kind: "delegation_result", name: origin.results.map((r) => r.name).join(", ") };
     case "surface":
       return { kind: origin.kind, name: origin.title };
+    // A reviewer's return to a coordinator: a team's word, shown as the reviewer's agent.
+    case "task_feedback":
+      return { kind: "agent", name: origin.name };
+    // The owner's own step on a card the agent showed, as answering it.
+    case "connected":
+      return { kind: "input_answer" };
     // A contact's messages answered once the channel's hours began: shown as theirs.
     case "hours_began":
       return { kind: "channel", name: origin.name };

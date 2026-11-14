@@ -1,5 +1,6 @@
 import type { Autonomy } from "@apx/protocol";
 import { memorySettings } from "../domain/memory-settings.ts";
+import { contactRights } from "../domain/contact-rights.ts";
 import { ownerTimeZone } from "../domain/owner.ts";
 import type { RunRecord } from "../domain/runs.ts";
 import { computerBriefing, HOME_COMPUTER } from "../environments/briefing.ts";
@@ -8,7 +9,7 @@ import { systemNote } from "../harness/native.ts";
 import type { ChatItem } from "../providers/types.ts";
 import { askedSkill } from "../skills/picker.ts";
 import { agentSkills, skillCatalog, skillsFor } from "../skills/skills.ts";
-import { contactToolNames } from "../tools/contact.ts";
+import { contactHolder, contactToolNames } from "../tools/contact.ts";
 import { readOnlyFolders, workDir } from "../tools/folders.ts";
 import { chatPlanBlock } from "../tools/plan.ts";
 import { waitingBlock } from "../tools/requests.ts";
@@ -237,6 +238,12 @@ function sectionsFor(deps: TurnDeps, turn: Turn, mode: Autonomy): Sections {
   const service = channelService(store, thread);
   const contact = audience.kind === "contact" || service?.person.role === "contact";
   const person = audience.kind === "contact" ? audience.person : service?.person;
+  const holder =
+    audience.kind === "contact"
+      ? contactHolder(audience)
+      : person && service
+        ? { rights: contactRights(store, person, service.channel.id), relation: person.relation }
+        : undefined;
   const on = store.settings.read("channels").filter((c) => c.enabled);
   const typeOf = (id: string) => on.find((c) => c.id === id)?.type ?? id;
   // A channel chat hears from its own account; Home covers every enabled account for direct super-agent work.
@@ -250,13 +257,13 @@ function sectionsFor(deps: TurnDeps, turn: Turn, mode: Autonomy): Sections {
   const chats = types.filter((t) => CHAT_CHANNELS.has(t));
   // A contact with no tools makes no call that could wait for the owner.
   const acts =
-    !contact || turn.web || serviceEnabled(channelService(store, thread)?.mode) || contactToolNames(person).size > 0;
+    !contact || turn.web || serviceEnabled(service?.mode) || contactToolNames(holder).size > 0;
   const allowed = !contact && vm?.permitted(agent.id, thread.id);
   return {
     mode: acts ? mode : undefined,
     chats,
     ownerChats: contact ? [] : chats,
-    service: serviceEnabled(channelService(store, thread)?.mode),
+    service: serviceEnabled(service?.mode),
     voice: chats.length > 0 && Boolean(store.threads.context(thread.id).voice_replies),
     stickers: chats.some((t) => store.stickers.known(t, 1).length > 0),
     computer: allowed ? (vm?.serves(thread.id) ? "chat" : thread.kind === "home" ? "home" : undefined) : undefined,

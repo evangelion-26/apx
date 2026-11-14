@@ -1,6 +1,8 @@
 // Where an app link an agent wrote goes (apx:settings/desktop, apx:tasks…): a place of the panel, or nothing for a
 // link it does not know (shown as its label).
+import { openMcp } from "../data/mcpPeek.ts";
 import { CONFIG_SECTIONS, type ConfigSection, go, nav, RESOURCE_TABS, type ResourceTab } from "../shell/nav.ts";
+import { projectTabFrom } from "../shell/projectTabs.ts";
 
 const isIn = <T extends string>(list: readonly T[], v: string | undefined): v is T =>
   v !== undefined && (list as readonly string[]).includes(v);
@@ -11,11 +13,12 @@ export type AppPlace =
   | { kind: "task"; id: string; open: () => void }
   | { kind: "tasks"; open: () => void }
   | { kind: "flows"; project?: string; flow?: string; open: () => void }
-  | { kind: "resources"; tab: ResourceTab; open: () => void }
+  | { kind: "resources"; tab: ResourceTab; server?: string; source?: string; open: () => void }
   | { kind: "inbox"; open: () => void }
   | { kind: "chat"; id: string; open: () => void }
   | { kind: "project"; id: string; open: () => void }
-  | { kind: "computer"; open: () => void };
+  | { kind: "computer"; open: () => void }
+  | { kind: "channels"; open: () => void };
 
 /** The place an `apx:` link names; undefined when it names none. */
 export function appPlace(href: string): AppPlace | undefined {
@@ -23,11 +26,13 @@ export function appPlace(href: string): AppPlace | undefined {
   if (!m) return undefined;
   const [, where = "", a, b, c] = m;
   const to = where.toLowerCase();
-  // Only a flow's link goes three deep: apx:flows/<project>/<flow>/edit.
-  if (c !== undefined && (to !== "flows" || c !== "edit")) return undefined;
+  if (c !== undefined && !(to === "flows" && c === "edit") && !(to === "resources" && a === "mcp" && b))
+    return undefined;
   switch (to) {
     case "settings":
     case "config": {
+      // Channels left Settings for a screen of their own; links written before still reach it.
+      if (a === "channels") return { kind: "channels", open: () => go.view("channels") };
       const section: ConfigSection | undefined = a === undefined ? "account" : isIn(CONFIG_SECTIONS, a) ? a : undefined;
       return section ? { kind: "settings", section, open: () => go.config(section) } : undefined;
     }
@@ -41,6 +46,15 @@ export function appPlace(href: string): AppPlace | undefined {
         open: () => go.flows(a, b, c === "edit"),
       };
     case "resources": {
+      if (a === "mcp" && b)
+        return {
+          kind: "resources",
+          tab: "mcp",
+          server: b,
+          ...(c ? { source: c } : {}),
+          open: () => openMcp(b, c),
+        };
+      if (b) return undefined;
       const tab: ResourceTab | undefined = a === undefined ? "skills" : isIn(RESOURCE_TABS, a) ? a : undefined;
       return tab ? { kind: "resources", tab, open: () => go.resources(tab, true) } : undefined;
     }
@@ -53,13 +67,14 @@ export function appPlace(href: string): AppPlace | undefined {
         kind: "computer",
         open: () => (nav.get().threadId && where === "computer" ? go.panel("computer") : go.view("computers")),
       };
+    case "channels":
+      return { kind: "channels", open: () => go.view("channels") };
     case "thread":
     case "chat":
       return a ? { kind: "chat", id: a, open: () => go.inboxThread(a) } : undefined;
     case "project": {
       if (!a) return undefined;
-      const tab = b === "chats" || b === "tasks" || b === "files" ? b : "overview";
-      return { kind: "project", id: a, open: () => go.project(a, tab) };
+      return { kind: "project", id: a, open: () => go.project(a, projectTabFrom(b)) };
     }
     default:
       return undefined;

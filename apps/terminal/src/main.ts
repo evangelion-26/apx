@@ -49,7 +49,9 @@ Usage:
   apx desktop             The desktop app (downloads and opens its installer when it is not here)
   apx upgrade [--check] [--json]   Check or apply the core's updater (a server install updates itself even when its core is down)
   apx doctor [--json]     Why the core does not answer on this machine, and what to run next
-  apx doctor --fix        Also trim old chat history the models no longer read and give the space back to the disk
+  apx doctor --fix        Repair recognized migrations offline; with a running core, reclaim old history and disk space
+  apx doctor fix          Alias for doctor --fix
+  apx doctor --schema     Read-only local schema report as JSON, including all structural differences; works offline
   apx devices [list|pair|revoke <id>] [--json]
   apx tailscale [status|connect|off]   Expose APX through Tailscale (must already be logged in)
   apx mcp tools <server> [<tool>] [--project <id>] [--scope global|project] [--json]
@@ -107,6 +109,7 @@ Usage:
   apx channels [add|rm|outbox]   Channels (Telegram bots); apx channels add telegram <id> --agent <a>
   apx channels send <channel> <contact> <text…>   Write to a contact yourself, in their chat on that channel
   apx channels recover <thread>   Ask the channel again for files that never arrived in a chat
+  apx channels email-history <channel> [after_uid uidvalidity]   Import one page of old mail quietly
   apx contacts [add|block|rm]    People APX talks to on channels
   apx pairing [me|ok|no <code>]  Approve who wrote to a channel
   apx compact <thread>    Summarize a thread's older turns now (APX's own loop; Claude Code and Codex compact their own)
@@ -130,9 +133,14 @@ Usage:
   apx projects [list] | register <folder> | sync [project]
                            Projects are folders with AGENTS.md / .apc/; their agents come from those files
   apx projects create "<Name>" [--path <folder>] [--kind personal|app|company|software|other] [--desc "…"]
-                           A new project: in that folder (made if missing), else in a folder of its own in APX's home
+                    [--parent <project>|base]
+                           A new project: in that folder (made if missing), else in a folder of its own in APX's home.
+                           With --parent, a subproject that works with its parent's agents, in the parent's folder
   apx projects set <project> [--name "…"] [--kind …] [--desc "…"] [--autonomy manual|auto|accept_edits|plan|total]
-                           Rename it, change its kind or description, or how far its agents go without asking
+                    [--parent <project>|base|none]
+                           Rename it, change its kind or description, how far its agents go without asking, or
+                           whose subproject it is
+  apx projects detach <subproject>   Make a subproject a project of its own (it keeps its folder, agents and chats)
   apx projects folders list|add|rm <project> [folder]
                            Folders its agents may read and never change (another checkout, docs)
   apx projects rm <project>   Forget a project in APX; its folder and files are never deleted
@@ -154,7 +162,7 @@ Usage:
   apx agents model <agent> <engine/model | engine | router | default> [--router] [--fallbacks <ref>,<ref>]
                            An agent's model; --router keeps the router as its fallback
 
-  apx models [--refresh]  Every engine and the models it offers (asked to the engine)
+  apx models [--refresh] [--json]  Every engine and the models it offers (asked to the engine)
   apx models config       The install default and the router
   apx models default <engine/model | engine | router> [--router]
   apx models chain <ref> [<ref>…]      The router's fallback chain, in order
@@ -275,6 +283,7 @@ function argumentsOf() {
       connect: { type: "string" },
       memory: { type: "boolean" },
       fix: { type: "boolean" },
+      schema: { type: "boolean" },
     },
   });
 }
@@ -315,7 +324,13 @@ try {
       }
       break;
     case "doctor":
-      await doctor({ json: values.json, ...(values.fix ? { fix: client } : {}) });
+      if (rest.length > 1 || (rest.length === 1 && rest[0] !== "fix"))
+        throw new Error("Usage: apx doctor [--fix | fix] [--json]");
+      await doctor({
+        json: values.json,
+        schema: values.schema,
+        ...(values.fix || rest[0] === "fix" ? { fix: client } : {}),
+      });
       break;
     case "devices":
     case "tailscale":
@@ -425,6 +440,7 @@ try {
         name: values.name,
         promptFile: values["prompt-file"],
         maxSteps: values["max-steps"],
+        autonomy: values.autonomy,
       });
       break;
     case "memory":

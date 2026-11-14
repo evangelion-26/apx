@@ -10,10 +10,21 @@ import Shot from "../../../../components/Shot.astro";
 import Terminal from "../../../../components/Terminal.astro";
 
 Un canal te deja hablar con tus agentes desde una app que ya usás, y deja que otras personas también les escriban.
-Los canales se conectan en **Configuración › Canales**. Después cada uno aparece en la barra lateral, bajo
-**Canales**, con sus contactos y sus chats.
+Los canales se conectan en **Administrar canales**, bajo **Canales** en la barra lateral: una pantalla que lista cada cuenta con quién la
+atiende y qué está esperando; la fila abre sus chats y sus dos botones, sus contactos y su configuración (el engranaje). Cada cuenta aparece también en
+la barra lateral, bajo **Canales**, con sus contactos y sus chats; su nombre arriba cambia a otra cuenta.
 
-<Shot name="settings-channels" alt="Configuración, sección Canales: un bot de Telegram conectado con su estado, quién responde y cómo se comporta" caption="Configuración › Canales" />
+<Shot name="settings-channels" alt="La pantalla Canales: cada cuenta de mensajería con quién la atiende, su estado y quién espera aprobación" caption="Canales" />
+
+La configuración de una cuenta está agrupada en partes y se guarda junta con **Guardar**: **Cuenta** (su nombre,
+conexión y sesión), **Quién responde** (con quién hablás, dónde van tus mensajes, quién responde a tus contactos),
+**Comportamiento** (un mensaje mientras trabaja, la web, el horario, **Solo te contesta a vos** en toda la cuenta, **Límites**, y **Lo que sabe y
+puede responder** y **Reglas** para todos los que escriben a la cuenta; las reglas propias de una sala o de un contacto
+van después y ganan), **Stickers y emojis** en las apps de chat,
+**Grupos**, **Espacios** o **Salas** donde la app los tiene (con el nombre que usa la app), **Contactos** (quienes escribieron en la cuenta, por privado o en sus salas, y los que agregaste; ver
+[Quién está en una cuenta](#quién-está-en-una-cuenta)),
+**Aprobaciones** (qué recibe alguien nuevo, y quién espera) y **Actividad** (lo que salió). Una cuenta nueva abre en
+**Cuenta**: ponele nombre y conectala; el resto se habilita cuando está conectada, y **Crear canal** la guarda.
 
 ## Canales disponibles
 
@@ -23,7 +34,7 @@ servidores MCP ni dispositivos vinculados. Todos tienen instrucciones abajo; alg
 | Canal | Configuración y límite importante |
 |---|---|
 | Telegram | [Bot](/es/channels/telegram/); chats directos y grupos listados. |
-| WhatsApp | [Vinculación QR](/es/channels/whatsapp/); tu línea o una dedicada. |
+| WhatsApp | [Vinculación QR](/es/channels/whatsapp/); tu línea o una dedicada; grupos listados. |
 | Discord | [Bot y salas](/es/channels/discord-slack/); habilitá las salas explícitamente. |
 | Slack | [App con Socket Mode](/es/channels/discord-slack/); mensajes directos. |
 | iMessage | [Permisos en Mac](/es/channels/imessage/); en la Mac del core. |
@@ -40,53 +51,60 @@ servidores MCP ni dispositivos vinculados. Todos tienen instrucciones abajo; alg
 | Microsoft Teams | [Bot Azure](/es/channels/teams-line/#microsoft-teams); requiere webhook HTTPS público. |
 | LINE | [Cuenta oficial](/es/channels/teams-line/#line); requiere webhook HTTPS público. |
 
-Empezá en **Configuración › Canales › Agregar canal**. Conectar no prueba que todas las salas, archivos o botones
+Empezá en **Canales › Nuevo canal**. Una segunda cuenta de la misma app (otro número de WhatsApp, otro bot,
+otra casilla) es un **Nuevo canal** más de esa app. Cada cuenta es
+un canal propio: su propio inicio de sesión, contactos, chats y agentes, su propia fila en la barra lateral y un
+**Nombre** que podés cambiar en su configuración. iMessage es la excepción: usa la única cuenta de Mensajes de la Mac.
+Conectar no prueba que todas las salas, archivos o botones
 funcionen: seguí la guía del servicio y probá recepción y respuesta. Leé [dispositivos](/es/devices/phone/) para la
 app Android e [integraciones](/es/extend/integrations/) para servicios conectados que no son canales.
-
-Podés conectar más de una cuenta del mismo tipo. Abrí ese tipo de canal, elegí **Agregar cuenta** y conectá el
-siguiente bot, número o buzón. Cada cuenta conserva por separado sus credenciales, contactos, salas e historial de
-entregas. La excepción es iMessage: usa la única identidad de Messages de la Mac donde corre APX.
-
-## Modos de atención a clientes (sin publicar)
-
-Cada cuenta tiene **Atención a clientes**, independiente de **Desconocidos**. Desconocidos define quién puede entrar;
-la atención define qué herramientas puede solicitar una persona admitida. Las cuentas existentes conservan
-**Atención base**.
-
-- **Atención base** mantiene las capacidades actuales de los contactos y la delegación del propietario en WhatsApp.
-- **Consultar super-agente** pide al super-agente que autorice cada operación propuesta. Una revisión rechazada,
-  fallida o incompleta no ejecuta nada. La autorización corresponde a esa operación y sus argumentos, no a todo el chat.
-- **Acceso total** permite solicitar las herramientas autorizadas del agente asignado, incluidos los MCP habilitados
-  y aprobados para su proyecto. Revisá las herramientas y sus datos antes de habilitarlo: una herramienta con acceso
-  amplio sigue teniendo ese alcance. Se conservan las confirmaciones del propietario y sus ajustes exclusivos.
-
-Los clientes siguen siendo contactos en todos los modos. Los chats de atención usan las instrucciones del agente
-sin cargar automáticamente la memoria privada del propietario ni otras conversaciones. Las salas públicas mantienen
-sus restricciones. Guardar otros ajustes conserva el modo de atención. Deshabilitar el acceso, bloquear al cliente
-o cambiar el agente invalida una operación que esté esperando revisión o confirmación.
-
-Para usar un MCP en atención, habilitalo en el proyecto del agente, elegí **Consultar super-agente** o **Acceso total**
-y probá desde una cuenta de cliente. No hace falta registrar al cliente como propietario.
 
 ## Tres palabras: canal, contacto, sala
 
 - Un **canal** es una app por la que habla APX: Telegram, WhatsApp, Discord, Slack, iMessage, Google Chat, SMS y más.
 - Un **contacto** es una persona en un canal. Cada contacto tiene un chat directo con tu agente.
-- Una **sala** es un lugar compartido que leen muchas personas, como un canal de tu servidor de Discord.
+- Una **sala** es un lugar compartido que leen muchas personas, como un canal de tu servidor de Discord o un grupo de
+  WhatsApp que listaste.
 
 Cada chat con un contacto y cada sala queda guardado como una conversación de APX, así que lo podés leer, buscar y
 meterte desde el panel. Los agentes usan las mismas palabras: pueden listar canales y contactos, escribirle a un
 contacto, leer una sala y publicar en una por su nombre exacto.
 
+Para dejar de lado los grupos de una cuenta por un tiempo, apagá **Usar grupos** (**Usar espacios**, **Usar salas**) arriba de esa parte de sus ajustes:
+todo lo que llega de ellos se descarta (no se guarda ni se contesta) y los agentes no pueden publicar ahí. Tu lista de
+salas y sus ajustes quedan para cuando lo vuelvas a prender.
+
+Con más de una cuenta de una app (dos números de WhatsApp, por ejemplo), un agente le escribe a un contacto desde una
+cuenta que responde él, y tu secretaria desde las tuyas. Si el contacto solo está en cuentas que responden otros
+agentes, al agente se le pide que diga cuál en vez de elegir una por vos.
+Una cuenta que empezás a agregar queda guardada cuando se conecta; si queda sin conectar, desaparece la próxima vez
+que arranca APX. iMessage es uno por Mac.
+
 ## Adónde van tus mensajes
 
-Cada cuenta tiene **Quién responde**. Puede ser un agente global o uno de cualquier proyecto. Cuando escribís vos o
-un contacto, el mensaje empieza en el chat propio de esa cuenta con el agente elegido; nunca se desvía a Home. Si
-cambiás el agente, se conservan la conversación y su historial, y el nuevo agente atiende los turnos siguientes.
+Cuando **vos** le escribís a tu agente por un canal, tu mensaje va a **Home**: una sola conversación con tu
+super-agente, escribas desde el panel, la terminal, Telegram o WhatsApp. Lo que empezaste en la compu lo seguís desde el
+teléfono. Home muestra todo; **Vos** en la lista de un canal muestra solo la parte de ese canal: lo que escribiste ahí
+y lo que se te contestó ahí. En Home, un mensaje que llegó o salió por una app de chat lleva la marca chica de esa app
+junto a su hora (pasá el mouse: **Enviado por Telegram**, **Llegó por WhatsApp**), así sabés que también le llegó a tu
+teléfono o a un contacto, no solo a la app.
 
-Home sigue siendo tu conversación directa con el super-agente. El super-agente puede listar y delegar a agentes de
-cualquier proyecto, mientras que un agente ordinario conserva los límites de su proyecto.
+Home responde lo que escribiste donde lo escribiste. Lo que llega después, como el resultado de un trabajo que tu
+super-agente le pasó a otro agente, te llega donde escribiste por última vez: la última app de chat que usaste, o la
+app. Para mover la conversación, decilo ("sigamos por Telegram"): tu super-agente escribe ahí enseguida y sigue ahí, y
+la app de chat en la que estabas no recibe nada más hasta que vuelvas a escribir en ella. "Mandame esto por Telegram"
+lo manda una vez y no mueve nada.
+
+**Con quién hablás** elige el agente que te responde en un canal: tu super-agente o el responsable de uno de tus
+proyectos. Con tu super-agente, **Tus mensajes** elige entre Home y **Chat propio**, un chat propio de ese canal. El
+responsable de un proyecto siempre te responde en el chat propio del canal: Home es tu conversación con el super-agente,
+así que ahí **Tus mensajes** queda en **Chat propio**. **Quién responde a tus contactos** elige, aparte, quién responde a
+quienes escriben al canal. Cambiar cualquiera de los dos pasa los chats que ya están abiertos, con su historial; un chat
+que le pasaste a otro agente se queda con ese agente, y también un contacto o una sala a los que les diste un agente
+propio (**Atiende** en su tarjeta, más abajo).
+
+Un canal que configuraste antes de que existiera esta opción sigue funcionando como antes: si su agente no era tu
+secretaria y tus mensajes iban a Home, tu secretaria te responde en Home y ese agente responde a tus contactos.
 
 ## Qué canales actúan con tu palabra
 
@@ -124,21 +142,77 @@ apx pairing no 482913          # descartar el pedido
 apx pairing me 482913          # esta dirección es mía (tuya, la del dueño)
 ```
 
+## Quién está en una cuenta
+
+**Contactos** de una cuenta lista a todos los que escribieron en ella, por privado o en sus salas y grupos, y a los que
+agregaste con **Agregar contacto**: su nombre, su dirección ahí, su relación y cuándo escribieron por última vez. Estar
+en la lista no le da nada a nadie: quien solo habló en una sala no es contacto hasta que lo hagas contacto, y ahí se
+le responde solo como diga la sala. Los bots de las plataformas nunca aparecen.
+
+- **Relación**, desde la misma lista. Quien solo escribió en una sala pasa a ser un contacto sin revisar: queda
+  silenciado, así que nadie le responde por privado hasta que lo apruebes (en su ficha o desde tu aviso).
+- **Ver dónde escribió** abre la sala de su último mensaje.
+- **Vos** es la fila con las direcciones que APX reconoce como tuyas, y dice cuál: lo que se escriba desde ellas cuenta
+  como tuyo. Una dirección pasa a ser tuya con `apx pairing me <código>`, **Soy yo** en una aprobación, o **Esta cuenta
+  es mía** en el menú de una fila (te pregunta antes; un contacto con esa dirección se borra). **Esta cuenta no es mía**
+  también pregunta antes, y la vuelve un contacto sin revisar. En Discord y Slack tu super-agente igual revisa que
+  seas vos antes de que APX actúe sobre lo que escribís.
+
 ## Los contactos están sellados
 
-Una persona aprobada es un **contacto**, con un rol: vos (dueño), contacto o bloqueado. En **Atención base**, el chat de un contacto está
+Una persona aprobada es un **contacto**, con un rol: vos (dueño), contacto o bloqueado. El chat de un contacto está
 **sellado**: el agente le contesta sin tools y sin nada de tu memoria, así que el mensaje de un desconocido no puede
 hacerlo actuar por vos.
 
-Abrí un contacto desde la pantalla del canal para configurar:
+Tocá el nombre arriba del chat de un contacto para abrir su ficha; bajo el nombre, unas marcas chicas muestran lo
+que tiene configurado (silenciado, supervisado, reglas propias, qué puede hacer su chat). La ficha configura:
 
+- **Relación**: cliente, lead, socio/a, proveedor, familia, amigo/a, pareja, compañero/a de trabajo u otro. Cambia
+  cómo le habla el agente; **Sin definir** la quita.
+- **Atiende**: **Como la cuenta** (su agente para contactos) u **Otro agente**, elegido entre tu súper-agente y los
+  responsables de tus proyectos. Su agente propio le contesta en todas las cuentas, sus chats abiertos pasan a él, y
+  cambiar el agente de contactos de la cuenta no lo toca.
 - **Quién es**, en tus palabras. Llega solo a los turnos que le contestan a esa persona.
 - **Reglas**, que van últimas en el prompt y le ganan a la cautela del agente.
-- **Qué puede hacer esta conversación**: **Tomar pedidos de turno**, **Tomar pedidos** (cada uno queda como tarea
-  para vos) y **Contestar desde mis notas** (tus notas generales, de lectura). Todo apagado de entrada.
-- **Silenciar**: sus mensajes se guardan pero nunca llegan a un modelo.
-- **Supervisar**: no se le contesta solo; te llega la respuesta que mandaría el agente, para mandarla, editarla o
+- **Qué puede hacer esta conversación**: **Anotar citas**, **Tomar pedidos** (cada uno queda como tarea
+  para vos), **Contestar desde mis notas** (tus notas generales, de lectura) y **Responder a cualquier hora**. Cada uno
+  sigue a la cuenta de entrada (**Cuenta: Sí** o **No**), o le ponés **Sí** o **No** solo a esta persona.
+
+Lo que recibe de entrada cada contacto de una cuenta está en la configuración de esa cuenta, **Contactos › Para tus
+contactos, por defecto**: todo apagado hasta que prendas algo. Lo que elijas para un contacto le gana, en esa cuenta y
+en cualquier otra.
+- **Silenciado** (un switch): sus mensajes se guardan pero nunca llegan a un modelo. El chat de un contacto
+  silenciado muestra una campana tachada junto a su nombre en el Inbox, y el de uno supervisado, un ojo.
+- **Supervisar** (un switch): no se le contesta solo; te llega la respuesta que mandaría el agente, para mandarla, editarla o
   descartarla. Mirá [Contactos supervisados](/es/channels/supervised/).
+
+El chat de una sala o de un grupo tiene su propia tarjeta, al costado del chat como la de un contacto (el botón **Sala**
+o **Grupo** de arriba la muestra y la esconde): **Atiende** (**Como la cuenta** u **Otro agente** solo para esa sala;
+cambiar el agente para contactos de la cuenta la deja con el suyo), **Cuándo habla en la sala** (cuando lo llaman,
+cuando sirve, siempre o solo leer, que es como se silencia una sala) y las **Reglas** de todas las salas de esa cuenta,
+las mismas que en **Salas** de la cuenta.
+
+La cara del agente que atiende aparece delante de su nombre, después de lo demás de esa línea ("Socio/a · Atiende
+Roby"): debajo del chat de cada contacto o sala en el Inbox y en la lista del canal, y arriba de la lista de una cuenta.
+Las cuentas con salas o grupos tienen ahí un botón **Salas**, **Grupos** o **Espacios**, junto a **Contactos**.
+
+Una cuenta se llama como la nombraste. Si le dejaste el nombre de la app (WhatsApp, Telegram), se llama como la app la
+nombra (tu perfil de WhatsApp, el nombre del bot) o por su número, dirección o bot; su ícono dice cuál es la app.
+Unas marcas chicas muestran lo que hace con todos los que le escriben: solo te contesta a vos, tiene horario de
+atención, tiene reglas, anota citas, toma pedidos o contesta desde tus notas. En **Administrar canales** lo que no hace
+se ve atenuado, para comparar las cuentas de un vistazo. Pasá el mouse sobre una marca para leerla. Las marcas propias
+de un contacto aparecen al final de su fila.
+
+La marca y el nombre de la cuenta arriba de su lista son un solo botón: abre un menú con sus salas, contactos y
+configuración, y después tus otras cuentas. En el teléfono esas herramientas están solo en ese menú.
+
+## El menú de una cuenta
+
+Hacé clic derecho en una cuenta, en **Canales** o en la sidebar, para abrirla, editarla, ver sus contactos, apagarla o
+prenderla, **Silenciar avisos** o **Desconectarla** (antes te pregunta). Con los avisos silenciados, lo que pasa en ella
+(alguien nuevo que escribe, un borrador que espera, una sala que pasó su límite) no llega a tu bandeja ni a tu app de
+chat; las fallas sí llegan, y todo sigue en la cuenta (sus aprobaciones, sus chats). **Volver a avisarme** los prende de
+nuevo.
 
 ### Buscar en la web
 
@@ -172,8 +246,11 @@ apx contacts block <id>      # o unblock, rm
 Con cualquier opción, un "pará" corto ("pará", "basta", "cancelá", "stop") mientras trabaja corta el turno: te llega
 "Listo, paré." y nada más.
 
-En Telegram y WhatsApp, **Mensajes que no necesitan respuesta** elige qué recibe un "ok", un gracias o una despedida:
-**Silencio** o **Reaccionar** (un emoji), sin llamar al modelo en ningún caso.
+Todo mensaje le llega al agente, en el idioma que sea: él decide cuándo un "ok", un gracias o una despedida no
+necesita respuesta y lo deja sin contestar. En Telegram, WhatsApp, Discord, Slack e iMessage, **Reacciones con emoji**
+(prendido por defecto) además le permite contestar con un emoji sobre el mensaje en vez de palabras; donde la app no
+tiene reacciones (Slack, iMessage) el emoji va como mensaje. Si lo apagás, el agente contesta con palabras o no
+contesta.
 
 ## Horario de atención
 
@@ -190,13 +267,26 @@ sábado).
   en ese momento.
 - Si vuelve a escribir cuando el horario ya empezó, ese mensaje se responde con los anteriores a la vista, y una sola
   vez.
-- A vos siempre te responde, en cualquier canal. A un contacto con **Responder a cualquier hora** (en su ficha),
-  también.
+- A vos siempre te responde, en cualquier canal. A un contacto con **Responder a cualquier hora** (en su ficha, o para todos en la configuración
+  de la cuenta), también.
 - En las salas, fuera del horario solo te responde a vos, y lo que se dijo mientras tanto no se responde después.
 
 También se lo podés pedir a tu super-agente en el chat ("respondé WhatsApp de lunes a viernes de 9 a 18, y a mi papá
-a cualquier hora"): cambia el horario de un canal y a quién se responde a cualquier hora, cada cambio cuando lo
-aprobás. Los demás agentes no pueden.
+a cualquier hora"): cambia el horario de un canal cuando lo aprobás, y a quién se responde a cualquier hora según
+su modo. Los demás agentes no pueden.
+
+## Límites
+
+Cada respuesta a un contacto cuesta una llamada al modelo, así que cada cuenta pone un tope a cuántas da sola por hora,
+en **Comportamiento › Límites**:
+
+- **Respuestas por hora a un contacto** (20 si no lo cambiás). Pasado eso, los mensajes de esa persona quedan en su
+  chat sin contestar el resto de la hora, y te avisa una vez.
+- **Respuestas por hora en total**, para todos los contactos de la cuenta juntos (0, lo inicial, es sin límite). Pasado
+  eso, los contactos de la cuenta esperan igual, y te avisa una vez.
+
+A vos nunca te limita. Las salas tienen sus propios límites, en **Salas**: segundos entre dos respuestas a una persona
+y respuestas por hora en una sala.
 
 ## Entregas y avisos
 
@@ -207,7 +297,7 @@ terminal muestra más:
 <Terminal command="apx channels outbox">{`10-08T09:14  sent      telegram  reply   Tu pedido salió esta mañana…
 10-08T09:02  sent      telegram  notice  Resumen de la mañana: 3 tareas vencen hoy…`}</Terminal>
 
-En **Avisos para vos**, **Las confirmaciones te siguen** manda a tu canal una pregunta que un agente hizo en la app y
+En **Configuración › Interrupciones**, **Las confirmaciones te siguen** manda a tu canal una pregunta que un agente hizo en la app y
 nadie contestó (al minuto, a los 2 o a los 10 minutos, o nunca). Las preguntas de tu super-agente llegan enteras, con
 botones en Telegram y opciones numeradas en WhatsApp y Signal; en los demás te recuerda responderla en la app ([qué
 canales actúan con tu palabra](#qué-canales-actúan-con-tu-palabra)). La pregunta de otro agente llega como una línea de
@@ -225,7 +315,7 @@ las respuestas habladas para ese chat; para eso también hace falta una voz en *
 | Canal | Estado | Cómo se conecta |
 |---|---|---|
 | [Telegram](/es/channels/telegram/) | Completo | Un bot que creás con BotFather |
-| [WhatsApp](/es/channels/whatsapp/) | Completo | Un dispositivo vinculado, por QR |
+| [WhatsApp](/es/channels/whatsapp/) | Completo | Un dispositivo vinculado, por QR: chats y los grupos que listes |
 | [Discord](/es/channels/discord-slack/) | Completo | Un bot: mensajes directos y salas del servidor |
 | [Slack](/es/channels/discord-slack/) | Completo | Una app en Socket Mode: mensajes directos |
 | [iMessage](/es/channels/imessage/) | Sin verificar | En una Mac: tools que usan los agentes y, si querés, contestar a las personas que aprobás |
@@ -238,14 +328,14 @@ las respuestas habladas para ese chat; para eso también hace falta una voz en *
 | Microsoft Teams, LINE | Sin verificar | Un bot (Azure Bot, Messaging API de LINE) que entrega a una [dirección pública](#una-dirección-pública-para-teams-y-line) |
 
 <Aside type="note">
-La terminal solo agrega bots de Telegram. Todos los demás canales se configuran en **Configuración › Canales**.
+La terminal solo agrega bots de Telegram. Todos los demás canales se configuran en **Canales**.
 </Aside>
 
 ## Una dirección pública para Teams y LINE
 
 Teams y LINE no dejan que un bot busque sus mensajes: mandan cada uno a una dirección web. APX sólo escucha en tu
 computadora, así que estos dos necesitan una **dirección pública**, que se configura en su pantalla de
-**Configuración › Canales**. Publica sólo una puerta aparte para webhooks (`…/hooks/<canal>`), nunca el panel ni la
+**Canales**. Publica sólo una puerta aparte para webhooks (`…/hooks/<canal>`), nunca el panel ni la
 API, y cada mensaje se verifica con la firma de la plataforma antes de que nada lo lea.
 
 | Cómo | Qué necesitás | La dirección |

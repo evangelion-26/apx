@@ -1,7 +1,11 @@
+import fs from "node:fs";
+import path from "node:path";
+import { isInside, samePath } from "../../apps/core/src/paths.ts";
 import type { DesktopInstallStatus } from "../../packages/protocol/src/desktop-install.ts";
-import { expect, test } from "./kit.ts";
+import { expect, rpc, test, world } from "./kit.ts";
 
-test.use({ desktopInstallNotice: true });
+// The offer is a card in the deck at the foot of the compact sidebar.
+test.use({ desktopInstallNotice: true, compactSidebar: true });
 
 test("existing web users get one-click desktop installation, progress, reload recovery and retry", async ({ page }) => {
   let current: DesktopInstallStatus = { available: true, installed: false, phase: "idle", received: 0 };
@@ -29,22 +33,13 @@ test("existing web users get one-click desktop installation, progress, reload re
     await route.fulfill({ json: { ok: true, result: current } });
   });
   await page.goto("/");
-  const notice = page.getByRole("complementary", { name: "Usá APX como aplicación de escritorio" });
+  const notice = page.locator('[data-card="desktop"]');
   await expect(notice).toBeVisible();
   await notice.getByRole("button", { name: "Instalar y abrir" }).click();
   await expect(notice.getByRole("progressbar")).toHaveAttribute("value", "25");
   await expect(notice.getByRole("button", { name: "Más tarde" })).toHaveCount(0);
   await page.screenshot({ path: test.info().outputPath("desktop-download.png") });
-  await notice.getByRole("button", { name: "Minimizar" }).focus();
-  await notice.getByRole("button", { name: "Minimizar" }).press("Enter");
-  await expect(notice).toHaveClass(/desktop-install--min/);
-  await expect(notice.getByRole("button", { name: "Mostrar aviso" })).toBeFocused();
-  await expect(notice.getByRole("progressbar")).toHaveAttribute("value", "25");
-  await notice.screenshot({ path: test.info().outputPath("desktop-download-minimized.png") });
   await expect(notice.getByRole("button", { name: "Cancelar" })).toBeVisible();
-  await notice.getByRole("button", { name: "Mostrar aviso" }).press("Enter");
-  await expect(notice).not.toHaveClass(/desktop-install--min/);
-  await expect(notice.getByRole("button", { name: "Minimizar" })).toBeFocused();
   await notice.getByRole("button", { name: "Cancelar" }).click();
   await expect(notice.getByRole("button", { name: "Instalar y abrir" })).toBeVisible();
   await expect(notice.getByRole("progressbar")).toHaveCount(0);
@@ -55,11 +50,8 @@ test("existing web users get one-click desktop installation, progress, reload re
   await page.reload();
   await expect(notice.getByRole("progressbar")).toHaveAttribute("value", "25");
   expect(starts).toBe(2);
-  await notice.getByRole("button", { name: "Minimizar" }).click();
-  await expect(notice).toHaveClass(/desktop-install--min/);
   current = { ...current, phase: "failed", error: "Download interrupted" };
-  await expect(notice.getByRole("alert")).toHaveText("Download interrupted");
-  await expect(notice).not.toHaveClass(/desktop-install--min/);
+  await expect(notice.getByRole("alert")).toContainText("Download interrupted");
   await notice.getByRole("button", { name: "Reintentar" }).click();
   await expect(notice.getByRole("progressbar")).toBeVisible();
   expect(starts).toBe(3);
@@ -119,7 +111,7 @@ test("an installed app opens from above the account, while headless instances ha
   await expect(page.getByRole("button", { name: "Abrir desktop", exact: true })).toHaveCount(0);
 });
 
-test("a pending start must be acknowledged before cancel, including in the minimized notice", async ({ page }) => {
+test("a pending start must be acknowledged before cancel", async ({ page }) => {
   let current: DesktopInstallStatus = { available: true, installed: false, phase: "idle", received: 0 };
   let requests = 0;
   let starts = 0;
@@ -146,12 +138,11 @@ test("a pending start must be acknowledged before cancel, including in the minim
   });
   try {
     await page.goto("/");
-    const notice = page.getByRole("complementary", { name: "Usá APX como aplicación de escritorio" });
+    const notice = page.locator('[data-card="desktop"]');
     await notice.getByRole("button", { name: "Instalar y abrir" }).click();
     await expect.poll(() => requests).toBe(1);
-    await expect(notice.getByRole("button", { name: "Cancelar" })).toBeDisabled();
-    await notice.getByRole("button", { name: "Minimizar" }).click();
-    await expect(notice.getByRole("button", { name: "Cancelar" })).toBeDisabled();
+    // Cancel before the start was acknowledged does nothing.
+    await notice.getByRole("button", { name: "Cancelar" }).click();
     expect(starts).toBe(0);
     expect(cancels).toBe(0);
     releaseStart?.();
@@ -163,10 +154,9 @@ test("a pending start must be acknowledged before cancel, including in the minim
     await notice.getByRole("button", { name: "Instalar y abrir" }).click();
     await expect(notice.getByRole("progressbar")).toHaveAttribute("value", "40");
     expect(starts).toBe(2);
-    await notice.getByRole("button", { name: "Minimizar" }).click();
     current = { ...current, phase: "installing" };
     await expect(notice.getByRole("button", { name: "Cancelar" })).toHaveCount(0);
-    await expect(notice.getByRole("button", { name: "Mostrar aviso" })).toBeVisible();
+    await expect(notice.getByRole("progressbar")).toBeVisible();
     current = { ...current, installed: true, phase: "ready" };
     await expect(notice).not.toBeVisible();
     await expect(page.getByRole("button", { name: "Abrir desktop", exact: true })).toBeVisible();
@@ -188,7 +178,7 @@ test("dismissing the offer survives reload and the sidebar can start installatio
     return route.fulfill({ json: { ok: true, result: current } });
   });
   await page.goto("/");
-  const notice = page.getByRole("complementary", { name: "Usá APX como aplicación de escritorio" });
+  const notice = page.locator('[data-card="desktop"]');
   await notice.getByRole("button", { name: "Más tarde" }).click();
   await expect(notice).not.toBeVisible();
   await page.reload();
@@ -220,4 +210,26 @@ test("the desktop app never renders the web launcher or queries installation sta
   await expect(page.locator(".desktop-launch")).toHaveCount(0);
   await expect(page.locator(".desktop-install")).toHaveCount(0);
   expect(checks).toBe(0);
+});
+
+// See HISTORY.md#e2e-desktop-handoff.
+test("Open desktop in the sandbox opens the sandbox's own app, saved on the sandbox's data", async ({ page }) => {
+  await page.route("**/rpc/setup.status", (route) =>
+    route.fulfill({ json: { ok: true, result: { done: true, fresh: false } } }),
+  );
+  const before = (await world.desktopApp()).opened.length;
+  await page.goto("/");
+  await page.locator(".desktop-launch").getByRole("button", { name: "Abrir desktop", exact: true }).click();
+  await expect.poll(async () => (await world.desktopApp()).opened.length).toBe(before + 1);
+  await expect.poll(async () => (await rpc<DesktopInstallStatus>("desktop.install_status")).phase).toBe("ready");
+
+  const { dir, home, core } = await world.info();
+  const { opened, connection } = await world.desktopApp();
+  const launched = opened[before];
+  expect(launched?.args).toContain("--apx-adopt-local");
+  const sandbox = fs.realpathSync(dir);
+  const apps = [launched?.command ?? "", ...(launched?.args ?? [])].filter((arg) => path.isAbsolute(arg));
+  expect(apps.some((arg) => isInside(sandbox, fs.realpathSync(arg)))).toBe(true);
+  expect(connection).toMatchObject({ mode: "local", port: Number(new URL(core).port) });
+  expect(samePath(String(connection?.home), fs.realpathSync(home))).toBe(true);
 });

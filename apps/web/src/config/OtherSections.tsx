@@ -1,8 +1,6 @@
 import type { OwnerIdentity } from "@apx/protocol";
-import { Badge, EmptyState, Icons, Input, SegmentedControl, SettingRow, Textarea } from "@apx/ui";
+import { Badge, Icons, Input, SegmentedControl, SettingRow, Switch, Textarea } from "@apx/ui";
 import { useEffect, useState } from "react";
-import { KindTile } from "../channels/KindIcon.tsx";
-import { CHANNEL_KINDS, type ChannelKind } from "../channels/kinds.ts";
 import { LanguageSelect, TimezoneSelect } from "../common/pickers/LocaleSelect.tsx";
 import { client } from "../data/client.ts";
 import { notify } from "../data/notices.ts";
@@ -105,6 +103,7 @@ export function AppearanceSection() {
   const look = usePrefs((s) => s.look);
   const font = usePrefs((s) => s.font);
   const textSize = usePrefs((s) => s.textSize);
+  const compact = usePrefs((s) => s.sidebarCompact);
   const width = usePrefs((s) => s.transcriptWidth);
   const lang = useLanguage();
   return (
@@ -129,6 +128,13 @@ export function AppearanceSection() {
           value={String(textSize)}
           onValueChange={(v) => setPrefs({ textSize: textSizeOf(Number(v)) })}
           options={TEXT_SIZES.map((size) => ({ value: String(size), label: `${size}%` }))}
+        />
+      </SettingRow>
+      <SettingRow title={t("appearance.compact")} description={t("appearance.compactHint")}>
+        <Switch
+          checked={compact}
+          aria-label={t("appearance.compact")}
+          onCheckedChange={(on) => setPrefs({ sidebarCompact: on })}
         />
       </SettingRow>
       <SettingRow title={t("appearance.width")} description={t("appearance.widthHint")}>
@@ -183,19 +189,5 @@ export function AppearanceSection() {
         />
       </SettingRow>
     </>
-  );
-}
-
-/** A channel kind that cannot be connected yet. */
-export function ChannelSoon({ channel }: { channel: ChannelKind }) {
-  const t = useT();
-  const name = t(CHANNEL_KINDS[channel].name);
-  return (
-    <div className="channelcfg">
-      <KindTile kind={channel} size={40} />
-      <EmptyState variant="dashed" icon={<Icons.Clock />} title={t("common.comingSoon", { name })}>
-        {t("channel.soonBody")}
-      </EmptyState>
-    </div>
   );
 }

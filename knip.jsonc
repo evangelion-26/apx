@@ -6,7 +6,18 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "treatConfigHintsAsErrors": true,
   // System tools the code runs; none is an npm package.
-  "ignoreBinaries": ["codex", "cwebp", "ffmpeg", "iconutil", "mkfifo", "plutil", "sips", "ssh-keygen", "xcode-select"],
+  "ignoreBinaries": [
+    "codex",
+    "cwebp",
+    "ffmpeg",
+    "iconutil",
+    "mkfifo",
+    "plutil",
+    "scutil",
+    "sips",
+    "ssh-keygen",
+    "xcode-select"
+  ],
   "ignoreIssues": {
     // Generated from the migrations (check:schema): every table's type is exported on purpose.
     "apps/core/src/db/schema.ts": ["types"],
@@ -29,7 +40,7 @@
     },
     "apps/core": {
       // Besides the bin (src/main.ts): runners and test fakes are spawned as processes by file path, never imported.
-      "entry": ["src/**/*-runner.mjs", "src/**/*.test-support.mjs"],
+      "entry": ["src/**/*-runner.mjs", "src/**/*.test-support.mjs", "src/db/doctor-repair-main.ts"],
       "project": ["src/**/*.{ts,mjs}"],
       // A template the agent copies into an owner's extension, not code the core runs.
       "ignore": ["src/skills/**/server-template.mjs"]

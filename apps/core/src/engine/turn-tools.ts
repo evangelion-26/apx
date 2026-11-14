@@ -2,9 +2,9 @@
 // and what is turned on; MCP tools join behind the bridge only where the channel policy allows them.
 import { BROWSER_CAP, CHROME_CAP } from "@apx/protocol";
 import { memorySettings } from "../domain/memory-settings.ts";
-import { answersChecked, inChrome, type Origin, ownerAsked } from "../domain/runs.ts";
+import { answersChecked, inChrome, type Origin, ownersTask, ownersWork } from "../domain/runs.ts";
 import type { Store } from "../domain/store.ts";
-import { CONTACT_TOOLS, contactToolNames } from "../tools/contact.ts";
+import { CONTACT_TOOLS, contactHolder, contactToolNames } from "../tools/contact.ts";
 import { STICKER_TOOL, stickersFor } from "../tools/directory.ts";
 import { IMESSAGE_TOOLS } from "../tools/imessage.ts";
 import { MCP_CALL, MCP_SEARCH, mcpBridge } from "../tools/mcp-bridge.ts";
@@ -86,10 +86,19 @@ const BOT_KEEPS = new Set([
 
 /** The kind of channel a message came on ("telegram"), for how the answer should look; none for the app. */
 export function channelKindOf(store: Store, o: Origin, replyChannel?: string | null) {
-  const channel = replyChannel === null ? undefined : (replyChannel ?? (o.kind === "channel" ? o.channel : undefined));
+  const channel = channelIdOf(o, replyChannel);
   if (!channel) return undefined;
   return store.settings.read("channels").find((c) => c.id === channel)?.type ?? channel;
 }
+
+/** The owner turned emoji reactions off on the channel this turn answers on. */
+export function reactionsOff(store: Store, o: Origin, replyChannel?: string | null): boolean {
+  const channel = channelIdOf(o, replyChannel);
+  return Boolean(channel) && store.settings.read("channels").find((c) => c.id === channel)?.reactions === false;
+}
+
+const channelIdOf = (o: Origin, replyChannel?: string | null) =>
+  replyChannel === null ? undefined : (replyChannel ?? (o.kind === "channel" ? o.channel : undefined));
 
 const VM_BROWSER_TOOLS = new Set(["browser_open", "browser_snapshot", "browser_text", "browser_click", "browser_type"]);
 /**
@@ -115,12 +124,13 @@ const VM_HOST_TOOLS = new Set([
 /** The tools this turn may use: the agent's, narrowed by whoever asked for it up the chain; a contact's, by their flags. */
 export async function turnTools(deps: TurnDeps, turn: Turn) {
   const inVm = deps.vm?.hasThread(turn.thread.id);
-  // Browser tools are offered with no other browser in a turn from APX's panel in Chrome, and in the owner's own turn
-  // while their Chrome is connected: those can browse there.
+  // Browser tools are offered with no other browser in a turn from APX's panel in Chrome, and in the owner's own work
+  // (their turn, their routine, their task) while their Chrome is connected: those can browse there.
   const askedIn = (id: string) => deps.store.runs.get(deps.store.inputs.get(id)?.run_id ?? "")?.input?.origin;
   const chrome =
     inChrome(turn.input.origin, askedIn) ||
-    (Boolean(deps.hasCap?.(CHROME_CAP)) && ownerAsked(turn.input.origin, askedIn));
+    (Boolean(deps.hasCap?.(CHROME_CAP)) &&
+      ownersWork(turn.input.origin, askedIn, ownersTask(deps.store.tasks, turn.thread.task_id)));
   // Offered only to an agent the owner allowed: one without it never asks to use it (DECISIONS.md#d-154).
   const computerOn = Boolean(deps.vm?.serves(turn.thread.id) && deps.vm.permitted(turn.agent.id, turn.thread.id));
   const service = channelService(deps.store, turn.thread);
@@ -164,7 +174,7 @@ export async function turnTools(deps: TurnDeps, turn: Turn) {
   // see the contact-only tools.
   const forContact =
     turn.audience.kind === "contact"
-      ? new Set([...contactToolNames(turn.audience.person), ...(turn.web ? WEB_TOOLS : []), STICKER_TOOL])
+      ? new Set([...contactToolNames(contactHolder(turn.audience)), ...(turn.web ? WEB_TOOLS : []), STICKER_TOOL])
       : new Set<string>();
   const narrowed = inherit(
     turn.agent,

@@ -19,12 +19,11 @@ import { useEngineLabel } from "../common/useEngineLabel.ts";
 import { useChannels } from "../data/channels.ts";
 import { blobOf, isWorking, routineName, threadAgent } from "../data/identity.ts";
 import { useData, useShownAgents } from "../data/state.ts";
-import { inLine } from "../data/waiting.ts";
 import { useLanguage, useT } from "../i18n/index.ts";
 import { AgentEvent, EmailCard, MediaGroup, TaskDescription } from "../lazy.ts";
 import { nav, useNav } from "../shell/nav.ts";
 import { AgentTurn } from "./AgentTurn.tsx";
-import { isAgentEvent, isIndividualChat } from "./agentEvent.ts";
+import { answerCards, isAgentEvent } from "./agentEvent.ts";
 import { MessageActions } from "./MessageActions.tsx";
 import { FilePart } from "./parts/FilePart.tsx";
 import { imageGenerationRuns } from "./parts/imageGeneration.ts";
@@ -34,7 +33,8 @@ import { NoticePart } from "./parts/NoticePart.tsx";
 import { latestPlan } from "./planLast.ts";
 import { quotedIndex, quoteParts, splitQuote } from "./quote.ts";
 import { Regenerate, UserMessage } from "./Rewind.tsx";
-import { InLine } from "./WaitingMessage.tsx";
+import { isRoom, ownerOnChannel } from "./room.ts";
+import { PersonFace, Speaker } from "./Speaker.tsx";
 
 const EMPTY: Msg[] = [];
 
@@ -47,12 +47,8 @@ export function Transcript({ thread, comments = false, via }: { thread: Thread; 
   const lang = useLanguage();
   const all = useData((s) => s.messages[thread.id] ?? EMPTY);
   const shown = useMemo(() => (via ? all.filter((m) => m.via === via) : all), [all, via]);
-  // What waits for the agent's next turn sits below the chat, in the order it will run, not where it was written.
-  const line = useMemo(() => inLine(shown), [shown]);
-  const messages = useMemo(
-    () => (line.length ? shown.filter((m) => m.waiting?.until !== "turn") : shown),
-    [shown, line],
-  );
+  // What waits for the agent's next turn sits above the composer (QueueTray), not where it was written.
+  const messages = useMemo(() => shown.filter((m) => m.waiting?.until !== "turn"), [shown]);
   const generationRuns = useMemo(() => imageGenerationRuns(messages), [messages]);
   const agents = useShownAgents();
   const engineLabel = useEngineLabel(thread.engine);
@@ -67,13 +63,7 @@ export function Transcript({ thread, comments = false, via }: { thread: Thread; 
   );
   const mailChannels = useMemo(() => new Set(mailIds.split(" ")), [mailIds]);
   const scroll = useRef<StickyScrollHandle>(null);
-  const multiAgent =
-    !isIndividualChat(thread) &&
-    (thread.kind === "group" ||
-      thread.kind === "a2a" ||
-      thread.kind === "task" ||
-      thread.agent_ids.length > 1 ||
-      new Set(messages.flatMap((m) => (m.author.kind === "agent" ? [m.author.id] : []))).size > 1);
+  const room = useMemo(() => isRoom(thread, messages), [thread, messages]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: day labels are re-made when the language changes
   const rows = useMemo(() => {
@@ -112,6 +102,7 @@ export function Transcript({ thread, comments = false, via }: { thread: Thread; 
   };
 
   const planAt = useMemo(() => latestPlan(messages), [messages]);
+  const answered = useMemo(() => answerCards(messages), [messages]);
   const working = isWorking(thread.state);
   const reactionsOf = (m: Msg) =>
     m.reactions?.length ? <ReactionList list={m.reactions} agentName={agent?.name ?? ""} /> : undefined;
@@ -122,7 +113,7 @@ export function Transcript({ thread, comments = false, via }: { thread: Thread; 
         resetKey={thread.id}
         toBottomLabel={t("chat.toBottom")}
         className="chat__scroll"
-        contentClassName="transcript"
+        contentClassName={room ? "transcript transcript--room" : "transcript"}
       >
         {rows.length === 0 && !working && (
           <EmptyState
@@ -156,10 +147,35 @@ export function Transcript({ thread, comments = false, via }: { thread: Thread; 
                   <UserText text={textOf(msg)} sourceOf={(quote) => quoted(msg.id, quote)} />
                 </UserMessage>
               </>
+            ) : ownerOnChannel(msg) ? (
+              <>
+                <UserMedia message={msg} from="user" />
+                {(textOf(msg) || bubbleFiles(msg.parts).length > 0) && (
+                  <Message
+                    from="user"
+                    variant="bubble"
+                    meta={<ViaMark thread={thread} message={msg} />}
+                    reactions={reactionsOf(msg)}
+                    actions={
+                      <MessageActions
+                        thread={thread}
+                        message={msg}
+                        text={textOf(msg)}
+                        speechKey={msg.id}
+                        speak={false}
+                      />
+                    }
+                  >
+                    <UserFiles message={msg} />
+                    <UserText text={textOf(msg)} sourceOf={(quote) => quoted(msg.id, quote)} />
+                  </Message>
+                )}
+              </>
             ) : msg.author.kind === "system" ? (
               <SystemMessage message={msg} />
             ) : msg.author.kind === "person" ? (
               <>
+                <Speaker face={<PersonFace id={msg.author.id} name={msg.author.name} />} name={msg.author.name} />
                 {/* A sticker or a photo alone: what anyone put on it shows on the picture, there is no bubble. */}
                 <UserMedia
                   message={msg}
@@ -170,13 +186,7 @@ export function Transcript({ thread, comments = false, via }: { thread: Thread; 
                   <Message
                     from="agent"
                     variant={mailChannels.has(msg.author.channel) && textOf(msg) ? "bare" : "bubble"}
-                    avatar={<AgentAvatar name={msg.author.name} size={24} />}
-                    meta={
-                      <>
-                        <span className="transcript__person">{msg.author.name}</span>
-                        <ViaMark thread={thread} message={msg} />
-                      </>
-                    }
+                    meta={<ViaMark thread={thread} message={msg} />}
                     reactions={reactionsOf(msg)}
                     actions={<MessageActions thread={thread} message={msg} text={textOf(msg)} speechKey={msg.id} />}
                   >
@@ -197,7 +207,7 @@ export function Transcript({ thread, comments = false, via }: { thread: Thread; 
               </SystemNote>
             ) : isAgentEvent(thread, msg) ? (
               <Suspense fallback={<SystemNote>{textOf(msg)}</SystemNote>}>
-                <AgentEvent message={msg} agent={agents[msg.author.id]}>
+                <AgentEvent message={msg} agent={agents[msg.author.id]} asker={agent} card={answered.get(msg.id)}>
                   <AgentTurn
                     thread={thread}
                     message={msg}
@@ -216,7 +226,7 @@ export function Transcript({ thread, comments = false, via }: { thread: Thread; 
                 message={msg}
                 generationImages={msg.run_id ? generationRuns.get(msg.run_id) : undefined}
                 agent={agents[msg.author.id]}
-                showAvatar={multiAgent}
+                showAvatar={room}
                 showTools={showTools}
                 showSkills={!comments}
                 showPlan={msg.id === planAt}
@@ -245,16 +255,6 @@ export function Transcript({ thread, comments = false, via }: { thread: Thread; 
             <ActivityPill tone="danger" label={t("chat.agentWaiting", { name: agent?.name ?? t("chat.theAgent") })} />
           </div>
         )}
-        <InLine
-          line={line}
-          agentName={agent?.name ?? t("chat.theAgent")}
-          body={(m) => (
-            <>
-              <UserFiles message={m} />
-              <UserText text={textOf(m)} sourceOf={(quote) => quoted(m.id, quote)} />
-            </>
-          )}
-        />
       </StickyScroll>
     </ViaFilter.Provider>
   );

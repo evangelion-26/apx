@@ -2,12 +2,15 @@ import type { CSSProperties } from "react";
 import { Suspense, useEffect } from "react";
 import { applyDesktopPrefs } from "../config/desktopPrefs.ts";
 import { useSlice } from "../data/createStore.ts";
+import { mcpPeek } from "../data/mcpPeek.ts";
 import { usePrefs } from "../data/prefs.ts";
 import { data } from "../data/state.ts";
 import { useThreadDialog } from "../data/threadAdmin.ts";
 import {
   AppScreen,
+  ChannelDialogs,
   ChannelScreen,
+  ChannelsScreen,
   CommandPalette,
   ComputersScreen,
   ConfigModal,
@@ -17,9 +20,12 @@ import {
   FlowsScreen,
   InstallArtifactDialog,
   LiveLayer,
+  McpPeek,
+  NoticeStrip,
   PhoneDialog,
   ProjectScreen,
   ResourcesScreen,
+  RoutinesScreen,
   TaskPeek,
   TasksScreen,
   ThreadDialogs,
@@ -40,6 +46,7 @@ import { Toasts } from "./Toasts.tsx";
 import { Topbar } from "./Topbar.tsx";
 import { UpdateDialogHost } from "./UpdatePill.tsx";
 import { ShellLayout } from "./useShellLayout.ts";
+import { useSidebarCompact } from "./useSidebarCompact.ts";
 import { useViewportWidth } from "./useViewportWidth.ts";
 
 /** Topbar · Sidebar · main (chat workspace, a project, an app or a placeholder view). See SPEC §1. */
@@ -54,16 +61,20 @@ export function Shell() {
   const panelOpen = chat && panel != null;
   const own = usePrefs((s) => s);
   const config = useNav((s) => s.config != null);
+  const channelDialog = useNav((s) => s.channelPick || s.channelEdit != null);
   const palette = useNav((s) => s.palette);
   const threadDialog = useThreadDialog() != null;
   const phone = useNav((s) => s.phone);
   const usageDialog = useNav((s) => s.usageDialog);
+  const mcpDialog = useSlice(mcpPeek, (s) => s.target != null);
   // A task opened from a chat floats over it; the Tasks screen shows its own beside the list.
   const peek = useNav((s) => s.peekTaskId != null && s.view !== "tasks");
   const widgetChat = useSlice(widgetChatOpen, (s) => s.threadId != null);
   const live = useAnyLive();
   const panelWide = useNav((s) => s.panelWide);
   const layout = computeLayout(width, panelOpen, chat && threadId != null, transcript, { ...own, panelWide });
+  // Compact sidebar: the notices are a deck of cards at its foot. Full: a strip over the page.
+  const sidebarCompact = useSidebarCompact();
   useShortcuts();
   useDesktopBridge();
 
@@ -72,7 +83,7 @@ export function Shell() {
       <Topbar />
       <OfflineBanner />
       {/* The corner cards' place is missing here (see below and Sidebar): the disk warning comes as a strip. */}
-      {layout.rail && (layout.compact || layout.listW === 0) && <DiskBanner />}
+      {sidebarCompact && layout.rail && (layout.compact || layout.listW === 0) && <DiskBanner />}
       <div className="shell__body">
         <Sidebar
           rail={layout.rail}
@@ -81,31 +92,42 @@ export function Shell() {
           fixed={layout.compact}
         />
         <main className="shell__main">
-          <ShellLayout.Provider value={layout}>
+          {!sidebarCompact && (
             <Suspense fallback={null}>
-              {view === "app" ? (
-                <AppScreen />
-              ) : view === "project" ? (
-                <ProjectScreen layout={layout} />
-              ) : view === "tasks" ? (
-                <TasksScreen />
-              ) : view === "flows" ? (
-                <FlowsScreen key={flowProject ?? "all"} projectId={flowProject} />
-              ) : view === "resources" ? (
-                <ResourcesScreen />
-              ) : view === "files" ? (
-                <FilesScreen />
-              ) : view === "computers" ? (
-                <ComputersScreen />
-              ) : view === "channel" ? (
-                <ChannelScreen />
-              ) : view === "engine" ? (
-                <ChatWorkspace layout={layout} list={<EngineSessions />} />
-              ) : (
-                <ChatWorkspace layout={layout} />
-              )}
+              <NoticeStrip />
             </Suspense>
-          </ShellLayout.Provider>
+          )}
+          <div className="shell__view">
+            <ShellLayout.Provider value={layout}>
+              <Suspense fallback={null}>
+                {view === "app" ? (
+                  <AppScreen />
+                ) : view === "project" ? (
+                  <ProjectScreen layout={layout} />
+                ) : view === "tasks" ? (
+                  <TasksScreen />
+                ) : view === "flows" ? (
+                  <FlowsScreen key={flowProject ?? "all"} projectId={flowProject} />
+                ) : view === "routines" ? (
+                  <RoutinesScreen />
+                ) : view === "resources" ? (
+                  <ResourcesScreen />
+                ) : view === "files" ? (
+                  <FilesScreen />
+                ) : view === "computers" ? (
+                  <ComputersScreen />
+                ) : view === "channels" ? (
+                  <ChannelsScreen />
+                ) : view === "channel" ? (
+                  <ChannelScreen />
+                ) : view === "engine" ? (
+                  <ChatWorkspace layout={layout} list={<EngineSessions />} />
+                ) : (
+                  <ChatWorkspace layout={layout} />
+                )}
+              </Suspense>
+            </ShellLayout.Provider>
+          </div>
         </main>
       </div>
       <Suspense fallback={null}>
@@ -114,6 +136,11 @@ export function Shell() {
       {config && (
         <Suspense fallback={null}>
           <ConfigModal />
+        </Suspense>
+      )}
+      {channelDialog && (
+        <Suspense fallback={null}>
+          <ChannelDialogs />
         </Suspense>
       )}
       {palette && (
@@ -129,6 +156,11 @@ export function Shell() {
       {phone && (
         <Suspense fallback={null}>
           <PhoneDialog />
+        </Suspense>
+      )}
+      {mcpDialog && (
+        <Suspense fallback={null}>
+          <McpPeek />
         </Suspense>
       )}
       {usageDialog && (
@@ -152,7 +184,7 @@ export function Shell() {
         <WelcomeV2 />
       </Suspense>
       {/* Over the foot of the list column: on a phone, or with the list hidden, it would cover the composer. */}
-      {layout.rail && !layout.compact && layout.listW > 0 && (
+      {sidebarCompact && layout.rail && !layout.compact && layout.listW > 0 && (
         <Suspense fallback={null}>
           <CornerCards floating />
         </Suspense>

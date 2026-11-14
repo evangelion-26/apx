@@ -12,10 +12,10 @@ import {
   AuxPurpose,
   BaseProject,
   CatalogEngine,
-  ChannelClosers,
   ChannelEmail,
   ChannelHours,
   ChannelInfo,
+  ChannelLimits,
   ChannelResearch,
   ChannelRooms,
   ChannelServiceMode,
@@ -42,9 +42,11 @@ import {
   OutboxItem,
   OutboxState,
   OwnerIdentity,
+  OwnerPatch,
   PairingRequest,
   PendingInput,
   Person,
+  PersonPerms,
   PersonRelation,
   PersonRole,
   Project,
@@ -117,6 +119,8 @@ const MemoryJobs = z.array(
     kind: z.string(),
     agent_id: Id,
     thread_id: Id,
+    /** The project the job works in; none outside a project. */
+    project_id: Id.nullable().optional(),
     state: z.string(),
     attempts: z.number().int(),
     updated_at: z.string(),
@@ -255,7 +259,7 @@ export const appMethods = {
     effect: true,
     access: "human",
   },
-  // Release news the super-agent tells the owner (DECISIONS.md#d-116).
+  // Release news the super-agent tells the owner (DECISIONS.md#d-117).
   /** The news APX carries: whether each was told (or known from the start) and whether it applies to this owner. */
   "system.news": {
     params: z.object({}).strict(),
@@ -325,7 +329,11 @@ export const appMethods = {
     access: "human",
   },
   "agents.list": {
-    params: z.object({}).strict(),
+    /**
+     * `project_id`: only the agents that work in that project (BASE_PROJECT_ID: the base project's), its own first,
+     * then the ones it takes from its parent, marked `inherited_from`.
+     */
+    params: z.object({ project_id: Id.optional() }).strict(),
     /** `former`: agents archived or deleted, so the chats they spoke in still show their name and face. */
     result: z.object({ agents: z.array(AgentListing), former: z.array(Agent).default([]) }),
     effect: false,
@@ -401,8 +409,22 @@ export const appMethods = {
   /** One agent with its prompt (the system prompt the owner writes; lists leave it out). */
   "agents.get": {
     params: z.object({ agent: Id }).strict(),
-    result: z.object({ agent: Agent, prompt: z.string() }),
+    result: z.object({ agent: Agent, prompt: z.string(), revision: z.string() }),
     effect: false,
+    access: "human",
+  },
+  "agents.review_queue": {
+    params: z.object({ project_id: Id.optional() }).strict(),
+    result: z.object({
+      agents: z.array(z.object({ agent: Id, name: z.string(), project_id: Id.optional(), revision: z.string() })),
+    }),
+    effect: false,
+    access: "human",
+  },
+  "agents.review_ack": {
+    params: z.object({ agent: Id, if_revision: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
+    result: z.object({ ok: z.literal(true) }),
+    effect: true,
     access: "human",
   },
   "agents.update": {
@@ -412,6 +434,11 @@ export const appMethods = {
         browser_profile: z.enum(["shared", "isolated", "incognito"]).optional(),
         /** null = back to the install default. */
         model_choice: ModelChoice.nullable().optional(),
+        /** Apply a reviewed proposal only if its instructions and project context are unchanged. */
+        if_revision: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .optional(),
         /** Definition fields: written to the agent's file for project agents. */
         name: z.string().min(1).max(80).optional(),
         role: z.string().max(200).optional(),
@@ -550,7 +577,9 @@ export const appMethods = {
   /**
    * A new project: in a folder (made if missing; a plain one gets an AGENTS.md and .apc/), or, without one, in a folder
    * of its own inside APX's home (`projects/<name>`). Name, kind and description go to its .apc/project.json; a project
-   * in a folder with no name given keeps the folder's.
+   * in a folder with no name given keeps the folder's. With `parent` it is a subproject of that project
+   * (BASE_PROJECT_ID: of the base project); without a path its folder goes inside the parent's (the base project's:
+   * in APX's home, as above).
    */
   "projects.create": {
     params: z
@@ -559,6 +588,7 @@ export const appMethods = {
         kind: ProjectKind.optional(),
         description: z.string().trim().max(500).optional(),
         path: z.string().trim().min(1).max(1024).optional(),
+        parent: Id.optional(),
       })
       .strict()
       .refine((p) => p.name || p.path, "a name or a folder"),
@@ -581,6 +611,12 @@ export const appMethods = {
         autonomy: Autonomy.nullable().optional(),
         /** Replaces the folders its agents may only read: absolute (or "~/…"), existing, outside APX's home. */
         read_only_folders: z.array(z.string().trim().min(1).max(1024)).max(20).optional(),
+        /**
+         * Makes it a subproject of that project (BASE_PROJECT_ID: of the base project); null makes it a project of
+         * its own again, which stops taking its parent's agents and resources. Refused for a project with subprojects,
+         * for itself and for a parent that is a subproject. Its folder stays where it is.
+         */
+        parent: Id.nullable().optional(),
       })
       .strict(),
     result: z.object({ project: Project }),
@@ -637,7 +673,10 @@ export const appMethods = {
     result: z.object({ projects: z.number().int(), agents: z.number().int(), archived: z.number().int() }),
     effect: true,
   },
-  /** Removes a folder from the registry; its files and existing conversations remain available. */
+  /**
+   * Removes a folder from the registry; its files and existing conversations remain available. Its subprojects become
+   * projects of their own.
+   */
   "projects.unregister": {
     params: z.object({ project: Id }).strict(),
     result: z.object({ ok: z.literal(true) }),
@@ -666,6 +705,11 @@ export const appMethods = {
       threads: z.array(Thread),
       /** With `delegated`: how many chats (not archived) each listed chat delegated, for the ones that did. */
       delegated: z.record(z.string(), z.number().int().nonnegative()).optional(),
+      /**
+       * With `root_thread`: the teammates its agent asked on its task from it. They hang under the task's conversation;
+       * they and theirs are listed as the chat's own.
+       */
+      asked: z.array(Id).optional(),
     }),
     effect: false,
   },
@@ -695,6 +739,21 @@ export const appMethods = {
       .strict(),
     result: Thread,
     effect: true,
+  },
+  /**
+   * A group chat of the owner and 2–5 agents (a prototype behind APX_GROUP_CHATS; rules/GROUP_CHAT.md). Its messages go
+   * through threads.send; each answer comes from the agents an @mention names, or the ones a cheap model picks.
+   */
+  "threads.group": {
+    params: z
+      .object({
+        agent_ids: z.array(Id).min(2).max(5),
+        title: z.string().max(200).optional(),
+      })
+      .strict(),
+    result: Thread,
+    effect: true,
+    access: "human",
   },
   /**
    * The one way to talk to an agent. The message and its run are stored before this returns, so a restart does not
@@ -935,7 +994,7 @@ export const appMethods = {
     access: "human",
   },
   "owner.set": {
-    params: OwnerIdentity.partial().strict(),
+    params: OwnerPatch,
     result: OwnerIdentity,
     effect: true,
     access: "human",
@@ -997,6 +1056,8 @@ export const appMethods = {
           .array(z.object({ id: Id, revision: z.number().int().positive() }))
           .min(2)
           .max(8),
+        /** `shared`: the notes the agent's place shares (the project's, or the global ones), not its own notebook. */
+        shelf: z.enum(["notebook", "shared"]).optional(),
       })
       .strict(),
     result: z.object({ merged: z.boolean() }),
@@ -1024,6 +1085,7 @@ export const appMethods = {
           .array(z.object({ id: Id, revision: z.number().int().positive() }))
           .max(32)
           .optional(),
+        shelf: z.enum(["notebook", "shared"]).optional(),
       })
       .strict(),
     result: z.object({ retired: z.number().int(), redated: z.number().int() }),
@@ -1061,6 +1123,13 @@ export const appMethods = {
   "memory.confirm": {
     params: z.object({ id: Id }).strict(),
     result: Memory,
+    effect: true,
+    access: "human",
+  },
+  /** The owner confirms several notes agents wrote about them at once; ids already confirmed or gone are skipped. */
+  "memory.confirm_all": {
+    params: z.object({ ids: z.array(Id).min(1).max(500) }).strict(),
+    result: z.object({ confirmed: z.number().int() }),
     effect: true,
     access: "human",
   },
@@ -1111,16 +1180,23 @@ export const appMethods = {
             label: z.string().max(60).optional(),
             enabled: z.boolean().default(true),
             agent_id: Id,
-            strangers: ChannelStrangers.default("pair"),
+            contacts_agent_id: Id.optional(),
+            strangers: ChannelStrangers.default(CHANNEL_DEFAULTS.strangers),
             service_mode: ChannelServiceMode.optional(),
-            concurrency: z.enum(["queue", "interrupt", "steer"]).default("steer"),
-            owner_thread: z.enum(["home", "own"]).default("own"),
+            concurrency: z.enum(["queue", "interrupt", "steer"]).default(CHANNEL_DEFAULTS.concurrency),
+            owner_thread: z.enum(["home", "own"]).default(CHANNEL_DEFAULTS.owner_thread),
             self_owner: z.boolean().optional(),
             rooms: ChannelRooms.optional(),
-            closers: ChannelClosers.default(CHANNEL_DEFAULTS.closers),
+            reactions: z.boolean().optional(),
             research: ChannelResearch.default(CHANNEL_DEFAULTS.research),
             hours: ChannelHours.optional(),
+            quiet: z.boolean().optional(),
             email: ChannelEmail.optional(),
+            contacts: PersonPerms.optional(),
+            knowledge: z.string().max(12_000).optional(),
+            rules: z.string().max(2000).optional(),
+            owner_only: z.boolean().optional(),
+            limits: ChannelLimits.optional(),
           })
           .nullable(),
         // A Google service account key travels whole (about 2.3 KB).
@@ -1160,9 +1236,11 @@ export const appMethods = {
         channel: z.string().max(60).optional(),
         /** Files to send with it (media ids): images as images, anything else as a document. */
         files: z.array(Id).max(5).optional(),
+        /** To the owner, who asked to go on there: Home answers on that chat from now on (DECISIONS.md#d-224). */
+        stay: z.boolean().optional(),
       })
       .strict(),
-    result: z.union([Sent, Withheld]),
+    result: z.union([Sent.extend({ moved: z.boolean().optional() }), Withheld]),
     effect: true,
   },
   /**
@@ -1186,7 +1264,13 @@ export const appMethods = {
   },
   /** What channels sent lately and how each delivery went (sent, uncertain, failed). */
   "channels.outbox": {
-    params: z.object({ limit: z.number().int().min(1).max(200).default(50) }).strict(),
+    params: z
+      .object({
+        limit: z.number().int().min(1).max(200).default(50),
+        /** Only what this account sent (its id). */
+        channel: z.string().min(1).max(64).optional(),
+      })
+      .strict(),
     result: z.object({ items: z.array(OutboxItem) }),
     effect: false,
     access: "human",
@@ -1503,10 +1587,16 @@ export const appMethods = {
         rules: z.string().max(1000).optional(),
         muted: z.boolean().optional(),
         supervised: z.boolean().optional(),
-        any_hour: z.boolean().optional(),
-        // Only the flags sent change (PersonPerms' defaults would reset the others).
+        /** Who answers them instead of each account's contacts agent; null gives them back to the account's. */
+        agent_id: Id.nullable().optional(),
+        // Only the rights sent change; null gives one back to the account they write on.
         perms: z
-          .object({ appointments: z.boolean(), requests: z.boolean(), notes: z.boolean() })
+          .object({
+            appointments: z.boolean().nullable(),
+            requests: z.boolean().nullable(),
+            notes: z.boolean().nullable(),
+            any_hour: z.boolean().nullable(),
+          })
           .partial()
           .strict()
           .optional(),
@@ -1589,9 +1679,70 @@ export const appMethods = {
     effect: false,
     access: "human",
   },
+  /**
+   * A mailbox account stops reading someone: their address (or their whole domain) goes on its "Never read" list and
+   * the person is blocked, their card and chat kept. `undo` reads them again: the entry leaves the list, the block too.
+   */
+  "contacts.never_read": {
+    params: z
+      .object({ person: Id, channel: Id, scope: z.enum(["address", "domain"]), undo: z.boolean().optional() })
+      .strict(),
+    result: z.object({ blocked: z.string() }),
+    effect: true,
+    access: "human",
+  },
   "contacts.claim": {
     params: z.object({ address: Id }).strict(),
     result: z.object({ moved: z.boolean() }),
+    effect: true,
+    access: "human",
+  },
+  /**
+   * "This is not me": one of the owner's addresses becomes a contact the owner has not reviewed (kept silenced, never
+   * answered until approved), with its chats on that channel. Named as they last signed there, else by the address.
+   */
+  "contacts.unclaim": {
+    params: z.object({ address: Id }).strict(),
+    result: Person,
+    effect: true,
+    access: "human",
+  },
+  /**
+   * Everyone who wrote on a channel account, in its rooms or in private, newest first: their address there, the name
+   * they last wrote under, when, where and how often. `person_id` when the address is someone's on file. Only people:
+   * the platforms' bots never reach APX.
+   */
+  "contacts.seen": {
+    params: z.object({ channel: z.string().min(1).max(32) }).strict(),
+    result: z.object({
+      seen: z.array(
+        z.object({
+          address: z.string(),
+          name: z.string(),
+          last_at: z.string(),
+          thread_id: z.string(),
+          messages: z.number().int(),
+          person_id: Id.optional(),
+        }),
+      ),
+    }),
+    effect: false,
+    access: "human",
+  },
+  /**
+   * Someone who wrote on the account (in `contacts.seen`, with no one's address yet) kept as a person: the owner
+   * ("this is me"), or a contact the owner has not reviewed, so listing them answers them no more than before.
+   */
+  "contacts.keep": {
+    params: z
+      .object({
+        channel: z.string().min(1).max(32),
+        address: z.string().min(1).max(200),
+        as: z.enum(["contact", "owner"]),
+        relation: PersonRelation.optional(),
+      })
+      .strict(),
+    result: Person,
     effect: true,
     access: "human",
   },
@@ -1811,6 +1962,26 @@ export const appMethods = {
     effect: true,
     access: "human",
   },
+  /**
+   * A side question to the chat's agent, on the chat's model, with the chat as read-only context: neither the question
+   * nor the answer enters the chat or its later turns. `earlier`: this side conversation's previous exchanges, oldest
+   * first. No tools; only its tokens are kept (usage, "aside"). Not in an engine's own session.
+   */
+  "threads.aside": {
+    params: z
+      .object({
+        thread: Id,
+        question: z.string().trim().min(1).max(4000),
+        earlier: z
+          .array(z.object({ question: z.string().max(4000), answer: z.string().max(20_000) }).strict())
+          .max(10)
+          .optional(),
+      })
+      .strict(),
+    result: z.object({ answer: z.string(), model: z.string() }),
+    effect: true,
+    access: "human",
+  },
   /** The owner saw the thread: its unread count and its notices (not pending questions) are cleared. */
   /** Messages whose text has every word typed (each also as a prefix), best first: for the search box. */
   "threads.search": {
@@ -1838,9 +2009,13 @@ export const appMethods = {
     effect: true,
     access: "human",
   },
-  /** Every widget, or with `project_id` only that project's (the global ones are listed without it). */
+  /**
+   * Every widget, or with `project_id` only that project's (the global ones are listed without it). `inherited`, with
+   * a subproject's `project_id`: also the apps of its parent (the base project's: the global ones) under a name it does
+   * not use itself; their `project_id` says whose they are.
+   */
   "surfaces.list": {
-    params: z.object({ project_id: Id.optional() }).strict(),
+    params: z.object({ project_id: Id.optional(), inherited: z.boolean().default(false) }).strict(),
     result: z.object({ surfaces: z.array(SurfaceSummary) }),
     effect: false,
   },
