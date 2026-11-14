@@ -318,7 +318,9 @@ export function createExecutor(o: {
       card("error", "channel access changed");
       return { ok: false, text: "Channel access changed; this operation was not run. Start a new turn." };
     }
-    const asked = authorize(tool, args, agent, untrusted);
+    // A channel may carry the owner's words, but it cannot approve a change to APX settings: that card stays in app.
+    const channelSetting = Boolean(tool.ownerSetting?.(args) && run.input?.origin.kind === "channel");
+    const asked = authorize(tool, args, agent, untrusted || channelSetting);
     const here = await onThisComputer(tool, args, agent, untrusted, asked, signal, (method, params) =>
       o.call(method, params, { run, callId }),
     );

@@ -68,8 +68,8 @@ Por ello se usa la etiqueta local inmutable y no se afirma que se haya refrescad
 - Protocolo, web y core compilan por separado.
 - Pasan las pruebas de `base`, `review`, `full`, MCP permitido, revisión aprobada/rechazada, salida malformada,
   revocación durante espera, persistencia del modo y separación entre cuentas.
-- Una prueba upstream de Telegram que espera una operación de ajustes desde el chat propio sigue fallando y debe
-  resolverse antes del GO final; no se ha debilitado ni omitido.
+- Las regresiones del chat propio pasan: el canal no puede escoger Home y un cambio de ajustes iniciado desde el
+  canal conserva su tarjeta de confirmación exclusivamente en la app.
 
 ## Decisiones pendientes del dueño
 

@@ -141,7 +141,7 @@ test("the owner's own chat follows the agent they talk to, into that agent's pro
   assert.deepEqual([contact?.agent_ids[0], contact?.project_id], ["superagent", undefined], "contacts stay");
 });
 
-test("Home is the super-agent's: a channel a project's head answers keeps the owner in its own chat", async (t) => {
+test("a channel keeps the owner in its own chat for the super-agent and a project's head", async (t) => {
   const env = await setup(t);
   const dir = tempDir("apx-head-");
   t.after(() => dir.remove());
@@ -154,13 +154,10 @@ test("Home is the super-agent's: a channel a project's head answers keeps the ow
     channel: { type: "telegram", agent_id: "superagent", owner_thread: "home" },
     token: TOKEN,
   });
-  env.tg.message(OWNER, "to Home");
-  await waitFor(
-    () =>
-      env.core.store.messages.list("home").some((m) => m.parts.some((p) => p.type === "text" && p.text === "to Home")),
-    "the super-agent's channel writes into Home",
-    { ms: 8000 },
-  );
+  const first = (await env.client.call("channels.list", {})).channels.find((c) => c.id === "tg");
+  assert.equal(first?.owner_thread, "own", "Home remains unavailable to channel accounts");
+  env.tg.message(OWNER, "to the account chat");
+  await waitFor(() => env.core.store.threads.byConversation("tg", String(OWNER.id)), "the account chat", { ms: 8000 });
 
   await env.client.call("channels.set", {
     id: "tg",
