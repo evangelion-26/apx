@@ -18,6 +18,7 @@ const budget = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "perf-b
 >;
 const port = Number(process.env.PERF_PORT ?? 7470);
 const TURNS = Number(process.env.PERF_TURNS ?? 60);
+const WARMUP_TURNS = 5;
 const diagnostics = process.env.PERF_DIAGNOSTICS === "1";
 const base = `http://127.0.0.1:${port}`;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -179,6 +180,16 @@ try {
 
   // Turns: the whole path but the model (context, tools, persistence, events).
   await rpc("models.set_config", { default: { model: "custom/fake-1", router: false } });
+  const warmupThread = await rpc<{ id: string }>("threads.create", { kind: "agent", agent_id: "superagent" });
+  // Compile and initialize the complete turn path before measuring steady-state latency. Startup has its own budget.
+  for (let i = 0; i < WARMUP_TURNS; i++) {
+    const { run } = await rpc<{ run: { id: string } }>("threads.send", {
+      thread: warmupThread.id,
+      text: `warmup ${i}`,
+    });
+    const done = await rpc<{ state: string }>("runs.wait", { run: run.id, timeout_s: 30 });
+    if (done.state !== "completed") throw new Error(`warmup turn ${i} ended ${done.state}`);
+  }
   const thread = await rpc<{ id: string }>("threads.create", { kind: "agent", agent_id: "superagent" });
   const turns: number[] = [];
   for (let i = 0; i < TURNS; i++) {
