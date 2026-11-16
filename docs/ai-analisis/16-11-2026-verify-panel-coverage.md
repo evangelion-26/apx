@@ -82,3 +82,21 @@ selection, message and reply assertions, and the check that the Telegram exchang
 
 Docs impact: none — this is a language-independent E2E selector correction with no product or user-facing behavior
 change.
+
+## Shard-isolation follow-up
+
+The latest run shows that accepting both UI languages was necessary but not sufficient. Panel coverage shard 1 opens
+the Telegram account and then finds no owner row in either language. `ChannelScreen` renders that row only after the
+account has an address linked to the owner. The previous test depended on `06-telegram.spec.ts` having created that
+link, but coverage shards do not guarantee that another spec ran against the same sandbox. Both attempts therefore
+timed out on the same absent row. The coverage report failure is a consequence of this Playwright failure, not a
+separate execution-coverage regression. The static job also reports only the unformatted selector introduced by the
+previous repair.
+
+The scenario now establishes its own precondition: it sends a bounded linking message, consumes the pairing code only
+when the address is not already linked, and approves that exact address as the owner before testing the account chat.
+It remains safe when a shared setup already linked the address. The selector is also formatted as required by Biome.
+Product code, protocol behavior, account isolation, and message assertions are unchanged.
+
+Docs impact: none — the repair removes cross-spec state from an internal E2E scenario and does not change an
+owner-facing contract.
