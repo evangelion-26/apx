@@ -113,3 +113,35 @@ the assertion independent of both the active language and any configured owner n
 Telegram account's conversation list. No product, protocol, channel-routing, or `service_mode` behavior changes.
 
 Docs impact: none — this is an internal E2E selector correction for supported owner aliases and languages.
+
+## Persisted-thread follow-up
+
+The following coverage run proves that Telegram receives the owner's message and the agent's completed reply, but the
+test still times out looking for the owner row. Its accessible description is therefore not a reliable way to locate
+the conversation across the merged panel states, even after accounting for language, nickname, and shard-local
+linking.
+
+The scenario now waits for the channel thread that the completed Telegram turn persisted, identified by the Telegram
+account id and the emulated owner's conversation id, and opens that exact thread through the channel's public panel
+navigation. It then keeps the same rendered message, rendered reply, and Home-isolation assertions. This removes the
+remaining dependency on row copy and rendering state without weakening the behavior under test or changing product
+code.
+
+Docs impact: none — only an internal E2E navigation mechanism changed; channel routing and user-facing behavior stay
+the same.
+
+## Root-cause correction
+
+The complete workflow log confirms that `06-telegram.spec.ts` runs as a Playwright setup dependency before this spec
+in every coverage shard. The earlier conclusion that a shard could reach this test without the linked owner was
+incorrect; adding another pairing exchange introduced work unrelated to the assertion and did not address the logged
+failure.
+
+The actual failure is the account-row lookup at line 28: the Telegram turn and reply had already completed, while the
+new panel no longer guaranteed the row's former accessible description. The regression now uses the same persisted
+relationship as `ChannelScreen`: it reads the owner from `contacts.list`, finds the Telegram thread whose
+`channel.person_id` is that owner, and opens the supported `#channel=…&chat=…` deep link. This is independent of the
+owner's alias, language, external Telegram id, and row copy, while still asserting both rendered messages and their
+absence from Home.
+
+Docs impact: none — this corrects only an internal E2E locator; no product, protocol, or documented behavior changed.
