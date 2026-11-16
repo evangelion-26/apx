@@ -7,13 +7,13 @@ import { expect, open, rpc, test } from "./kit.ts";
 
 /** Kept with the run's results, for the designer's review. */
 const shot = (page: Page, name: string) => page.screenshot({ path: test.info().outputPath(`${name}.png`) });
-const choiceOf = async () =>
-  (await rpc<{ agent: Agent }>("agents.get", { agent: "fallback-writer" })).agent.model_choice;
+const choiceOf = async (agent: string) => (await rpc<{ agent: Agent }>("agents.get", { agent })).agent.model_choice;
 
 test("the owner lists, orders and removes an agent's fallback models, and sees when one answered", async ({ page }) => {
+  const agent = `fallback-writer-${test.info().retry}`;
   await rpc("setup.finish", {});
   await rpc("agents.create", {
-    slug: "fallback-writer",
+    slug: agent,
     name: "Wren",
     role: "Writer",
     model_choice: { model: "custom/fake-limited", router: false },
@@ -26,18 +26,23 @@ test("the owner lists, orders and removes an agent's fallback models, and sees w
   await expect(editor.getByText("Modelos de respaldo")).toBeVisible();
 
   const add = editor.getByRole("button", { name: "Agregar respaldo" });
+  const selected: string[] = [];
   for (const model of ["fake-1", "fake-2"]) {
     await add.click();
     await page.getByRole("option", { name: new RegExp(`custom/${model}`) }).click();
+    selected.push(`custom/${model}`);
+    await expect.poll(async () => (await choiceOf(agent))?.fallbacks).toEqual(selected);
   }
-  await expect.poll(choiceOf).toEqual({
-    model: "custom/fake-limited",
-    router: false,
-    fallbacks: ["custom/fake-1", "custom/fake-2"],
-  });
+  await expect
+    .poll(() => choiceOf(agent))
+    .toEqual({
+      model: "custom/fake-limited",
+      router: false,
+      fallbacks: ["custom/fake-1", "custom/fake-2"],
+    });
   const rows = editor.locator(".agentfallbacks .chain__item");
   await rows.nth(1).getByRole("button", { name: "Subir" }).click();
-  await expect.poll(async () => (await choiceOf())?.fallbacks).toEqual(["custom/fake-2", "custom/fake-1"]);
+  await expect.poll(async () => (await choiceOf(agent))?.fallbacks).toEqual(["custom/fake-2", "custom/fake-1"]);
   await expect(editor.getByRole("button", { name: "Modelo de Wren" })).toHaveText("custom/fake-limited · 2 respaldos");
   await shot(page, "agent-fallbacks-editor");
   await page.setViewportSize({ width: 390, height: 844 });
@@ -45,7 +50,7 @@ test("the owner lists, orders and removes an agent's fallback models, and sees w
   await page.setViewportSize({ width: 1280, height: 800 });
 
   await rows.nth(0).getByRole("button", { name: "Quitar este respaldo" }).click();
-  await expect.poll(async () => (await choiceOf())?.fallbacks).toEqual(["custom/fake-1"]);
+  await expect.poll(async () => (await choiceOf(agent))?.fallbacks).toEqual(["custom/fake-1"]);
   // Models save as they are picked: nothing is left for the editor to save.
   await page.keyboard.press("Escape");
   await expect(editor).toHaveCount(0);
@@ -53,7 +58,7 @@ test("the owner lists, orders and removes an agent's fallback models, and sees w
   // Its own model is at its limit: the fallback answers, and the reply says so.
   const thread = await rpc<Thread>("threads.create", {
     kind: "loose",
-    agent_id: "fallback-writer",
+    agent_id: agent,
     title: "Fallbacks",
   });
   await rpc("threads.send", { thread: thread.id, text: "hello" });
@@ -63,5 +68,5 @@ test("the owner lists, orders and removes an agent's fallback models, and sees w
   await expect(meta).toContainText("custom/fake-1");
   await expect(meta).toContainText("Con respaldo");
   await shot(page, "agent-fallbacks-reply");
-  await rpc("agents.archive", { agent: "fallback-writer" });
+  await rpc("agents.archive", { agent });
 });

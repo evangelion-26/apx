@@ -1,5 +1,5 @@
 // The owner's Telegram account has its own chat; messages there do not appear in Home.
-import { expect, open, rpc, test, until, world } from "./kit.ts";
+import { ACCOUNT_NAME, expect, open, rpc, test, until, world } from "./kit.ts";
 
 const owner = { id: 4242, name: "Ana" };
 
@@ -14,7 +14,7 @@ test("the owner's Telegram conversation stays in its account chat", async ({ pag
     (await world.sentTo(owner.id)).some((m) => m.text?.includes("Got it: Badge check from my phone")),
   );
   await open(page);
-  await page.getByRole("button", { name: "Telegram", exact: true }).first().click();
+  await page.getByRole("button", { name: ACCOUNT_NAME.telegram, exact: true }).first().click();
   await page.getByRole("button", { name: /^Vos/ }).click();
   const main = page.getByRole("main");
   await expect(main.getByText("Badge check from my phone", { exact: true }).first()).toBeVisible();

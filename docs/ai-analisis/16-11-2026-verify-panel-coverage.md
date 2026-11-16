@@ -50,3 +50,22 @@ None. The separate account-chat behavior is already an established fork contract
 
 Docs impact: none — the correction aligns an internal E2E setup with behavior already documented for separate owner
 account chats; no user-facing contract changes.
+
+## Follow-up verification run
+
+The next attached run passes static checks and unit tests. Coverage fails in two panel specs introduced by the merged
+design:
+
+- `132-message-channel-badge.spec.ts` still selects the Telegram account by the old generic platform label. Account
+  navigation now uses the configured account name (`Acme Desk` in the sandbox), as the other channel specs do.
+- `143-agent-fallbacks.spec.ts` selects two fallback models without waiting for the first asynchronous save. Both UI
+  updates can therefore start from the empty list and the later save leaves only `custom/fake-2`. A retry then reuses
+  the same persistent sandbox and collides with the agent created by the failed attempt.
+
+The repair selects Telegram through the shared sandbox account-name fixture, waits for each fallback to be persisted
+before adding the next one, and gives every Playwright retry its own agent id. Assertions for adding, ordering,
+removing, fallback execution, and reply metadata remain in place. The Flow connection scenario passed on retry and is
+not changed without deterministic failure evidence.
+
+Docs impact: none — these are internal E2E synchronization and selector repairs; product behavior and owner-facing
+instructions do not change.
