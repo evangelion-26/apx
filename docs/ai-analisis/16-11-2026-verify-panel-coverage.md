@@ -69,3 +69,16 @@ not changed without deterministic failure evidence.
 
 Docs impact: none — these are internal E2E synchronization and selector repairs; product behavior and owner-facing
 instructions do not change.
+
+## Final coverage follow-up
+
+The subsequent run passes static checks, lightness budgets, and every unit-test shard. Its only failure is panel
+coverage shard 1, where `132-message-channel-badge.spec.ts` opens the configured Telegram account successfully and
+then waits for an owner-row button whose accessible name starts with the Spanish `Vos`. The panel can start this shard
+in English, where the same row starts with `You`, so both the initial attempt and retry exhaust the test timeout.
+
+The selector now accepts the two supported UI languages and is scoped to the channel's conversation list. The account
+selection, message and reply assertions, and the check that the Telegram exchange is absent from Home remain unchanged.
+
+Docs impact: none — this is a language-independent E2E selector correction with no product or user-facing behavior
+change.
