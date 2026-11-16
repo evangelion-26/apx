@@ -100,3 +100,16 @@ Product code, protocol behavior, account isolation, and message assertions are u
 
 Docs impact: none — the repair removes cross-spec state from an internal E2E scenario and does not change an
 owner-facing contract.
+
+## Owner-alias follow-up
+
+The next panel coverage run confirms that the Telegram address is linked and the channel turn completes, but the
+owner-row click still times out. The selector assumed the row's accessible name started with the translated generic
+label (`Vos` or `You`). In this sandbox the owner has a nickname, so `OwnerRow` renders that nickname first and the
+generic-label selector cannot match it.
+
+The scenario now identifies the owner row by its stable translated description of the chat with the bot. This keeps
+the assertion independent of both the active language and any configured owner nickname while remaining scoped to the
+Telegram account's conversation list. No product, protocol, channel-routing, or `service_mode` behavior changes.
+
+Docs impact: none — this is an internal E2E selector correction for supported owner aliases and languages.

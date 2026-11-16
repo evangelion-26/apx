@@ -24,7 +24,7 @@ test("the owner's Telegram conversation stays in its account chat", async ({ pag
   await page.getByRole("button", { name: ACCOUNT_NAME.telegram, exact: true }).first().click();
   await page
     .locator(".chan__rows")
-    .getByRole("button", { name: /^(Vos|You)/ })
+    .getByRole("button", { name: /(?:Tu chat con el bot|Your chat with the bot)/ })
     .click();
   const main = page.getByRole("main");
   await expect(main.getByText("Badge check from my phone", { exact: true }).first()).toBeVisible();
