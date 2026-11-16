@@ -38,6 +38,28 @@ APX installed with the install script; the desktop app is replaced by downloadin
 Otherwise start it with the desktop app, `apx service install` (or `apx service restart` if the service exists), or
 `pnpm dev` from a checkout. If it starts and dies, read its log.
 
+### A migration prevents startup
+
+Run `apx doctor --fix` (or `apx doctor fix`) on the affected server with its `APX_HOME`, without `APX_URL`.
+With the core down, this can reconcile the exact recognized hotfix schema 109 into the integrated schema 115.
+It refuses an active daemon, other database connections and unknown tables, views, triggers or unique indexes.
+Indexes added by hand are removed (the backup keeps them); it never resets the version.
+The observed final nullable `flow_schedules.activated_at TEXT` extension and its values are kept only when every
+other declaration matches; it is not interpreted as a schedule cursor or evidence of an official migration. A private SQLite backup in `<APX_HOME>/backups/` includes committed WAL data.
+Repair runs transactionally and validates integrity and foreign keys before commit; a failure keeps the original
+state and reports the backup when one was made. Do not overwrite the database or delete its WAL files yourself.
+After success, start APX normally and run `apx doctor` to check it; repair does not restart any service.
+
+For a complete structural diagnosis, run `apx doctor --schema --json > apx-schema-report.json` on that server
+with its `APX_HOME` and without `APX_URL`. This works with the core stopped and opens the database read-only.
+The JSON lists all differences from the recorded version's reference and separately from the installed target:
+tables, columns, foreign keys, indexes, views and triggers. It reports declaration differences without exporting
+SQL bodies, default values, owner rows, logs or credentials. Review object names before sharing the report.
+For the published schema109 hotfix it selects that release's reference rather than the integration branch's109.
+The report does not change the database or authorize repairs; `--schema` cannot be combined with `--fix`.
+If the schema is not recognized, keep the data and share the diagnosis and schema definitions with support.
+With a running core, `--fix` retains its history-compaction behavior instead of doing offline migration repair.
+
 ## Where the logs are
 
 However APX runs (the desktop app, the service, or `pnpm dev`), the core writes its log to the same file, in the
@@ -216,8 +238,8 @@ apx pairing           # strangers waiting for your approval
 
 - **A stranger gets no answer**: by default a new person gets a pairing code and waits for you. Approve them with
   `apx pairing ok <code>` (or `apx pairing me <code>` if it's you on another address), or tell your secretary.
-- **Your own message seems to go nowhere**: by default your messages on a channel go to the Home chat, so the answer is
-  there too.
+- **Your own message seems to go nowhere**: open **You** under that channel account. Your message and its answer stay
+  in that account's chat.
 - **A person is blocked**: blocked people get no answer. Check `apx contacts`.
 - **A send is `uncertain`**: the core was cut while sending, so it can't know whether it arrived. It isn't sent twice.
 - **Two APX answer the same bot**: don't run APX v1 and v2 with the same bot. Installing v2 stops v1's daemon for this

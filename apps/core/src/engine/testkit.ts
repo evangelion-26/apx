@@ -17,6 +17,7 @@ import type { Llm, LlmRequest } from "../providers/llm.ts";
 import type { AssistantItem, Completion } from "../providers/types.ts";
 import type { NgrokStart } from "../public-tunnel.ts";
 import type { ReleaseSource } from "../release-notes.ts";
+import type { OwnersChrome } from "../rpc/browser.ts";
 import { createCore } from "../server.ts";
 import type { TelemetrySink } from "../telemetry-sink.ts";
 import { removeDir, waitFor } from "../testkit/platform.ts";
@@ -97,6 +98,7 @@ export async function startCore(opts: {
   channelAdapters?: Record<string, AdapterFactory>;
   channelRetryMs?: readonly number[];
   roomBurstMs?: number;
+  roomTimers?: RunTimers;
   followUpTimers?: RunTimers;
   suggestBurstMs?: number;
   inputWaits?: InputWaits;
@@ -111,6 +113,8 @@ export async function startCore(opts: {
   /** How the core holds the Mac awake; by default nothing is spawned. */
   keepAwake?: (cmd: string, args: string[]) => { kill(): boolean; once(event: "exit", listener: () => void): unknown };
   desktop?: DesktopOps;
+  /** The owner's Chrome started for a turn; by default nothing is started and nothing is waited for. */
+  ownersChrome?: OwnersChrome;
   /** Messages on a Mac; none by default, so a test never reads the machine's own. */
   imessage?: IMessageOps | null;
   /** The tailscale CLI (by default one that is not connected, never the machine's) and ngrok. */
@@ -137,6 +141,8 @@ export async function startCore(opts: {
   flowHttpAllow?: string[];
   /** Reads a project folder at start instead of the worker threads (a test holds one or answers it). */
   projectRead?: ReadProjectFiles;
+  /** Group chats of several agents (off, as in a default install). */
+  groupChats?: boolean;
 }) {
   const home = opts.home ?? fs.mkdtempSync(path.join(os.tmpdir(), "apx-engine-"));
   // A provider named "fake" so refs like "fake/fake-1" are valid; the scripted model answers for it.
@@ -153,6 +159,7 @@ export async function startCore(opts: {
       ...(opts.googleClient ? { googleClient: opts.googleClient } : {}),
       ...(opts.expoPushUrl ? { expoPushUrl: opts.expoPushUrl } : {}),
       ...(opts.flowHttpAllow ? { flowHttpAllow: opts.flowHttpAllow } : {}),
+      ...(opts.groupChats ? { groupChats: true } : {}),
     }),
     {
       quiet: true,
@@ -174,6 +181,7 @@ export async function startCore(opts: {
       ...(opts.channelAdapters ? { channelAdapters: opts.channelAdapters } : {}),
       ...(opts.channelRetryMs ? { channelRetryMs: opts.channelRetryMs } : {}),
       ...(opts.roomBurstMs !== undefined ? { roomBurstMs: opts.roomBurstMs } : {}),
+      ...(opts.roomTimers ? { roomTimers: opts.roomTimers } : {}),
       ...(opts.followUpTimers ? { followUpTimers: opts.followUpTimers } : {}),
       ...(opts.suggestBurstMs !== undefined ? { suggestBurstMs: opts.suggestBurstMs } : {}),
       ...(opts.inputWaits ? { inputWaits: opts.inputWaits } : {}),
@@ -186,6 +194,7 @@ export async function startCore(opts: {
       sleptSince: opts.sleptSince ?? (() => false),
       keepAwake: opts.keepAwake ?? (() => ({ kill: () => true, once: () => undefined })),
       ...(opts.desktop ? { desktop: opts.desktop } : {}),
+      ownersChrome: opts.ownersChrome ?? { open: async () => "failed", graceMs: 0 },
       imessage: opts.imessage ?? null,
       tailscale: opts.tailscale ?? (async () => ({ ok: false, out: "not connected" })),
       ...(opts.ngrok ? { ngrok: opts.ngrok } : {}),

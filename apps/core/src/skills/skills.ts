@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseFrontmatter, textField } from "../apc/frontmatter.ts";
 import type { AgentRecord } from "../domain/agents.ts";
+import { lineage, type ProjectRecord } from "../domain/projects.ts";
 import type { Store } from "../domain/store.ts";
 import { isInside, realpath, tildeHome } from "../paths.ts";
 import { type RuntimeHomes, runtimes, shippedNames } from "./runtimes.ts";
@@ -37,6 +38,10 @@ export type SkillRoots = { home: string; apps?: RuntimeHomes | undefined };
 /** APX's own guides to changing APX itself: shipped with the core, always on, read-only, and they keep their names. */
 export const APX_SKILLS_DIR = path.join(import.meta.dirname, "apx");
 const isApx = (s: Skill) => s.source === "apx";
+
+/** Old prompts and saved skill selections resolve to the single maintained guide. */
+export const canonicalSkillName = (name: string): string =>
+  name.toLowerCase() === "apx-agent-prompts" ? "apx-agents" : name.toLowerCase();
 
 /** Skills the owner turned off: "*" everywhere, or per project id. Kept in settings, never in the skill's folder. */
 type OffList = Record<string, string[]>;
@@ -145,18 +150,21 @@ export function skillsFor(store: Store, roots: SkillRoots, projectId: string | u
  */
 export function allSkills(store: Store, roots: SkillRoots, projectId: string | undefined): Skill[] {
   const apx = scan(APX_SKILLS_DIR, false, { scope: "global", source: "apx", own: false });
-  const project = projectId ? store.projects.get(projectId) : undefined;
-  const repo = project?.path && project.present ? project.path : undefined;
   // `top` is the repo's `.apc` or `.<app>`: a link there would read a folder outside the project.
-  const inRepo = (top: string, source: Skill["source"]) =>
-    repo && project && !isLink(path.join(repo, top))
+  const inRepo = (project: ProjectRecord | undefined) => (top: string, source: Skill["source"]) => {
+    const repo = project?.path && project.present ? project.path : undefined;
+    return repo && project && !isLink(path.join(repo, top))
       ? scan(path.join(repo, top, "skills"), false, {
           scope: "project",
           project_id: project.id,
           source,
-          own: source === "project",
+          // A parent's skill is changed in the parent, not from its subproject.
+          own: source === "project" && project.id === projectId,
         })
       : [];
+  };
+  // A subproject's own skills, then its parent's (theirs keep the parent's id).
+  const repos = lineage(store.projects, projectId).map((id) => inRepo(store.projects.get(id)));
   // The other apps keep copies of the skills APX writes for them (runtimes.ts): those are APX's, not theirs.
   const shipped = roots.apps ? shippedNames() : NONE;
   const apps = roots.apps
@@ -173,8 +181,7 @@ export function allSkills(store: Store, roots: SkillRoots, projectId: string | u
     );
   return firstPerName([
     ...apx,
-    ...inRepo(".apc", "project"),
-    ...APPS.flatMap((app) => inRepo(`.${app}`, app)),
+    ...repos.flatMap((inIt) => [...inIt(".apc", "project"), ...APPS.flatMap((app) => inIt(`.${app}`, app))]),
     ...scan(path.join(roots.home, "skills"), true, { scope: "global", source: "owner", own: true }),
     ...apps,
     ...extensions,
@@ -186,7 +193,7 @@ export function allSkills(store: Store, roots: SkillRoots, projectId: string | u
  * link, is not a copy). A name of one of APX's own is APX's alone: another would change how agents learn to change APX.
  */
 function firstPerName(found: Skill[]): Skill[] {
-  const reserved = new Set(found.filter(isApx).map((s) => s.name));
+  const reserved = new Set([...found.filter(isApx).map((s) => s.name), "apx-agent-prompts"]);
   const first = new Map<string, { skill: Skill; dirs: Set<string> }>();
   for (const s of found) {
     if (!isApx(s) && reserved.has(s.name)) continue;
@@ -211,7 +218,7 @@ export const skillPath = (dir: string) => tildeHome(path.join(dir, "SKILL.md"));
  * means all.
  */
 export function agentSkills(agent: AgentRecord, all: Skill[]): Skill[] {
-  const wanted = new Set((agent.skills ?? []).map((s) => s.toLowerCase()));
+  const wanted = new Set((agent.skills ?? []).map(canonicalSkillName));
   const named = (s: Skill) => wanted.has(s.name.toLowerCase());
   return all.some(named) ? all.filter((s) => isApx(s) || named(s)) : all;
 }

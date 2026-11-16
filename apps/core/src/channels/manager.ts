@@ -23,6 +23,9 @@ import type { InternalCall } from "../rpc/internal.ts";
 import type { Secrets } from "../secrets.ts";
 import { splitSpoken } from "../services/audio.ts";
 import type { Services } from "../services/registry.ts";
+import { addedUnconnected, dropUnconnected, keptConnected, kindFixed, restartsFor } from "./accounts.ts";
+import { agentProject, roomAnswerer } from "./agent-project.ts";
+import { createChannelMail } from "./channel-mail.ts";
 import { createDelivery } from "./delivery.ts";
 import { guardReply } from "./guard.ts";
 import { createHeld } from "./held.ts";
@@ -33,7 +36,8 @@ import { createOutgoing } from "./outgoing.ts";
 import { createOwnerNotices } from "./owner-notices.ts";
 import { createPoster } from "./post.ts";
 import { createRecovery } from "./recover.ts";
-import { createRooms, quietMentions, roomMentions } from "./rooms.ts";
+import { createRooms, quietMentions, roomMentions, roomsReadOnly } from "./rooms.ts";
+import { joinSplitContacts } from "./same-person.ts";
 import { createSignals } from "./signals.ts";
 import { createStickers, type See } from "./stickers.ts";
 import { createSuggestions } from "./suggestions.ts";
@@ -43,6 +47,7 @@ import {
   type ChannelAdapter,
   type ChannelConfig,
   ChannelRefused,
+  contactAgentOf,
   type HookRequest,
   type HookResponse,
   type ServerRoom,
@@ -61,6 +66,8 @@ type Live = {
   status: ChannelInfo["status"];
   error?: string | undefined;
   account?: string | undefined;
+  /** The name the app gives the account (a WhatsApp profile, a bot's name). */
+  name?: string | undefined;
   /** A QR to link the account, while one is waiting to be scanned. */
   qr?: string | undefined;
 };
@@ -90,12 +97,12 @@ export function createChannels(deps: {
   see?: See;
   /** How long a room waits for one person's quick messages to settle (tests shorten it). */
   roomBurstMs?: number;
+  /** The clock rooms wait on: the burst and each person's pause (tests move it). */
+  roomTimers?: RunTimers;
   /** The reply a supervised contact would get, drafted with the agent's model and not sent. */
   draft?: (threadId: string, agentId: string, signal?: AbortSignal) => Promise<Draft>;
   /** How long a supervised contact's quick messages may keep coming before one draft answers them (tests shorten it). */
   suggestBurstMs?: number;
-  /** The owner's words kept without a turn, for memory (memory-maintenance.ts ownerReplied). */
-  ownerReplied?: (messageId: string) => void;
   /** The time attention hours are read against (tests move it). */
   now?: () => Date;
   /** When a question waiting in the app follows the owner to their channel (tests move it). */
@@ -125,11 +132,45 @@ export function createChannels(deps: {
   const changing = new Map<string, Promise<unknown>>();
   let stopped = false;
 
-  const configs = (): ChannelConfig[] => store.settings.read("channels");
+  // What a kind of channel fixes (email: its own chat, one mail after another) wins over what was saved.
+  const configs = (): ChannelConfig[] => store.settings.read("channels").map(kindFixed);
 
-  const assignAccountChats = (id: string, agentId: string) => {
-    const projectId = store.agents.get(agentId)?.project_id;
-    for (const thread of store.threads.byChannel(id)) store.threads.assign(thread.id, agentId, projectId);
+  /**
+   * Open chats follow a change of who answers them: the owner's own chats, and its contacts' and rooms' (not those of a
+   * contact the owner gave an agent of their own).
+   */
+  const moveAnswerers = (id: string, before: ChannelConfig, after: Omit<ChannelConfig, "id">) => {
+    const moves: Array<[boolean, string, string]> = [
+      [true, before.agent_id, after.agent_id],
+      [false, contactAgentOf(before), contactAgentOf(after)],
+    ];
+    const except = new Set(
+      store.persons.list().flatMap((p) => (p.agent_id && store.agents.get(p.agent_id) ? [p.id] : [])),
+    );
+    // A room with an agent of its own, before or after, is handed below; the others follow the account.
+    const ownRoom = (r: { agent_id?: string | undefined } | undefined) =>
+      Boolean(r?.agent_id && store.agents.get(r.agent_id));
+    const beforeRooms = new Map((before.rooms?.rooms ?? []).map((r) => [r.id, r]));
+    const handed = (after.rooms?.rooms ?? []).filter((r) => ownRoom(r) || ownRoom(beforeRooms.get(r.id)));
+    const exceptRooms = new Set(handed.map((r) => r.id));
+    for (const [owners, from, to] of moves)
+      if (from !== to)
+        store.threads.moveAnswerer({
+          channel: id,
+          owner: OWNER_ID,
+          owners,
+          from,
+          to,
+          project: agentProject(store, to),
+          except,
+          exceptRooms,
+          fromProject: agentProject(store, from),
+        });
+    for (const room of handed) {
+      const to = roomAnswerer(store, after, room);
+      const thread = store.threads.byConversation(id, room.id);
+      if (thread && thread.agent_ids[0] !== to) store.threads.handTo(thread, to, agentProject(store, to));
+    }
   };
 
   const delivery = createDelivery({
@@ -160,7 +201,7 @@ export function createChannels(deps: {
     tell,
     judge: deps.judge,
     ...(deps.roomBurstMs !== undefined ? { burstMs: deps.roomBurstMs } : {}),
-    now: () => clock().getTime(),
+    ...(deps.roomTimers ? { timers: deps.roomTimers } : { now: () => clock().getTime() }),
   });
   const poster = createPoster(store, delivery);
   const outgoing = createOutgoing({
@@ -190,17 +231,18 @@ export function createChannels(deps: {
       return l?.status === "running" ? l.adapter : undefined;
     },
   });
-  const stickers = createStickers({ store, home: deps.home, log, see: deps.see, attention: deps.attention });
+  const stickers = createStickers({ store, home: deps.home, log, see: deps.see, attention: notices.attention });
   const signals = createSignals({
     store,
     log,
     live: (id) => live.get(id),
-    attention: deps.attention,
+    attention: notices.attention,
     delivery,
     stickers,
   });
   const inbound = createInbound({
     store,
+    bus: deps.bus,
     home: deps.home,
     log,
     call: deps.call,
@@ -208,16 +250,15 @@ export function createChannels(deps: {
     delivery,
     configs,
     tell,
-    attention: deps.attention,
+    attention: notices.attention,
     ownAccount: (id) => Boolean(live.get(id)?.adapter.caps.ownAccount),
     rooms,
     suggestions,
     stickers,
-    react: signals.reactOn,
     answeredHere: cards.answeredHere,
     held,
+    judge: deps.judge,
     now: clock,
-    ...(deps.ownerReplied ? { ownerReplied: deps.ownerReplied } : {}),
     setButtons: async (id, conversation, ref, buttons) => {
       const l = live.get(id);
       if (l?.status !== "running" || !l.adapter.setButtons) return false;
@@ -339,6 +380,9 @@ export function createChannels(deps: {
     const audience = thread ? audienceOf(store, thread) : undefined;
     const why = (run.error ?? "").replace(/^Could not finish: /, "").slice(0, 200);
     const room = audience?.kind === "contact" ? audience.room : undefined;
+    // A group on the owner's own phone the agent may not speak in: its answer stays in the app. See DECISIONS.md#d-216
+    const cfg = configs().find((c) => c.id === to.channel);
+    if (room && cfg && roomsReadOnly(cfg)) return;
     if (!out && run.state === "failed" && room) {
       // A public room never sees what went wrong inside APX; the owner does.
       const text = channelTexts(store).roomFailed(`#${room.name}`, why);
@@ -518,6 +562,11 @@ export function createChannels(deps: {
     const adapter = factory(config, secrets.resolve(`secret://${tokenName(config.id)}`));
     const l: Live = { config, adapter, ac, status: "starting" };
     live.set(config.id, l);
+    // Up: a new account is kept from now on, and contacts split across its addresses are joined.
+    const up = () => {
+      keptConnected(store, config.id);
+      void joinSplitContacts(store, config.id, adapter, log);
+    };
     try {
       const r = await adapter.start({
         receive: (m) => inbound.receive(config.id, m),
@@ -526,15 +575,19 @@ export function createChannels(deps: {
         status: (s, error) => {
           l.status = s;
           l.error = error;
-          if (s === "running") delivery.kick();
+          if (s === "running") {
+            delivery.kick();
+            up();
+          }
         },
         qr: (code) => {
           l.qr = code;
         },
         receipt: (externalId, state) => delivery.receipt(config.id, externalId, state),
         room: (g) => sawGroup(config.id, g),
-        identified: ({ account, owner }) => {
+        identified: ({ account, owner, name }) => {
           l.account = account;
+          if (name) l.name = name;
           if (!owner) return;
           // The owner's own phone: whoever writes from it is the owner. A line of its own is nobody: the owner is
           // the phone they write to it from.
@@ -554,7 +607,11 @@ export function createChannels(deps: {
         signal: ac.signal,
       });
       if (r.account) l.account = r.account;
-      if (l.status === "starting" && !r.waiting) l.status = "running";
+      if (r.name) l.name = r.name;
+      if (l.status === "starting" && !r.waiting) {
+        l.status = "running";
+        up();
+      }
       delivery.kick();
     } catch (err) {
       l.status = "error";
@@ -582,6 +639,15 @@ export function createChannels(deps: {
     l.ac.abort();
     await l.adapter.stop().catch(() => {});
     if (live.get(id) === l) live.delete(id);
+  }
+
+  /** A removed channel's sign-in, groups and saved session go with it. */
+  async function forget(id: string, before: ChannelConfig | undefined, running?: ChannelAdapter): Promise<void> {
+    secrets.set(tokenName(id), null);
+    store.settings.set(groupsKey(id), "[]");
+    // Disabled channels have no live adapter, but their persisted session still needs removing.
+    const adapter = running ?? (before ? deps.factories[before.type]?.(before, undefined) : undefined);
+    await adapter?.forget?.().catch(() => {});
   }
 
   /** Applies one channel's new settings after any change already in progress for it. */
@@ -612,6 +678,7 @@ export function createChannels(deps: {
         status: l?.status ?? "off",
         ...(l?.error ? { error: l.error } : {}),
         ...(l?.account ? { account: l.account } : {}),
+        ...(l?.name && l.name !== l.account ? { account_name: l.name } : {}),
         ...(l?.qr ? { qr: l.qr } : {}),
       };
     });
@@ -655,30 +722,13 @@ export function createChannels(deps: {
     return l.adapter.webhook(req, signal);
   }
 
-  /** The running channels that can send a new mail the owner wrote (a mailbox), with the address it goes from. */
-  function mailboxes(): Array<{ id: string; label: string; address?: string }> {
-    return [...live.values()]
-      .filter((l) => l.status === "running" && l.adapter.compose)
-      .map((l) => ({
-        id: l.config.id,
-        label: l.config.label ?? l.config.id,
-        ...(l.account ? { address: l.account } : {}),
-      }));
-  }
-
-  /** Sends a mail the owner wrote from one of `mailboxes`. */
-  async function compose(id: string, mail: { to: string[]; cc: string[]; subject: string; body: string }) {
-    const l = live.get(id);
-    if (!l?.adapter.compose || l.status !== "running") throw new Error(`the ${id} channel cannot send mail now`);
-    return l.adapter.compose(mail);
-  }
+  const mail = createChannelMail(live, (id) => (message) => inbound.restoreMail(id, message));
 
   return {
     info,
     serverRooms,
     webhook,
-    mailboxes,
-    compose,
+    ...mail,
     ...outgoing,
     notifyOwner,
     approved: inbound.approved,
@@ -688,6 +738,11 @@ export function createChannels(deps: {
     openHeld: held.open,
     /** A supervised contact's drafts: the owner sends one (as is or edited) or drops it. */
     suggestions: { send: suggestions.send, discard: suggestions.discard },
+    /** A new account, kept only once it connects (see `start`). */
+    async add(id: string, config: Omit<ChannelConfig, "id">, token?: string): Promise<ChannelInfo[]> {
+      addedUnconnected(store, id);
+      return this.set(id, config, token);
+    },
     /** Adds, changes or removes a channel and (re)starts it. */
     async set(id: string, config: Omit<ChannelConfig, "id"> | null, token?: string): Promise<ChannelInfo[]> {
       await serially(id, async () => {
@@ -695,8 +750,8 @@ export function createChannels(deps: {
         const before = configs().find((c) => c.id === id);
         const rest = configs().filter((c) => c.id !== id);
         store.tx(() => {
-          store.settings.write("channels", config ? [...rest, { ...config, id }] : rest);
-          if (config) assignAccountChats(id, config.agent_id);
+          store.settings.write("channels", config ? [...rest, kindFixed({ ...config, id })] : rest);
+          if (before && config) moveAnswerers(id, before, config);
         });
         // Who answers, where the owner's words go, overlapping messages and strangers are read per message: the
         // connection stays up (a WhatsApp restart is seconds of "connecting"). It restarts only for what it runs
@@ -706,13 +761,7 @@ export function createChannels(deps: {
           l.config = { ...config, id };
           return;
         }
-        if (!config) {
-          secrets.set(tokenName(id), null);
-          store.settings.set(groupsKey(id), "[]");
-          // Disabled channels have no live adapter, but their persisted session still needs removing.
-          const adapter = l?.adapter ?? (before ? deps.factories[before.type]?.(before, undefined) : undefined);
-          await adapter?.forget?.().catch(() => {});
-        }
+        if (!config) await forget(id, before, l?.adapter);
         await stopOne(id);
         const next = configs().find((c) => c.id === id);
         if (next) await startOne(next);
@@ -722,19 +771,13 @@ export function createChannels(deps: {
     /** Boot: sends cut by a restart become "uncertain", messages not handled yet are handled, channels start. */
     async start(): Promise<void> {
       stopped = false;
-      const saved = configs();
-      if (saved.some((c) => c.owner_thread === "home")) {
-        const migrated = saved.map((c) => (c.owner_thread === "home" ? { ...c, owner_thread: "own" as const } : c));
-        store.tx(() => {
-          store.settings.write("channels", migrated);
-          for (const config of migrated) assignAccountChats(config.id, config.agent_id);
-        });
-      }
       const cut = store.channels.outbox.reconcile();
       if (cut) log.warn({ items: cut }, "channel sends cut by the last restart are marked uncertain");
       unsubscribe();
       unsubscribe = deps.bus.on(onEvent);
       inbound.resume();
+      // A new account never connected (the panel closed while it was added) is not kept across a restart.
+      for (const c of dropUnconnected(store)) await forget(c.id, c);
       await Promise.allSettled(configs().map(startOne));
       resumeFollowUps();
       delivery.kick();
@@ -757,20 +800,3 @@ export function createChannels(deps: {
 }
 
 export type Channels = ReturnType<typeof createChannels>;
-
-/** Whether a settings change needs the channel started again (what its adapter is built with). */
-function restartsFor(a: Omit<ChannelConfig, "id">, b: Omit<ChannelConfig, "id">): boolean {
-  // The rooms a bot listens to are part of its connection (Discord subscribes to server messages only with some).
-  const rooms = (c: Omit<ChannelConfig, "id">) =>
-    (c.rooms?.rooms ?? [])
-      .map((r) => r.id)
-      .sort()
-      .join(",");
-  return (
-    a.type !== b.type ||
-    a.enabled !== b.enabled ||
-    Boolean(a.self_owner) !== Boolean(b.self_owner) ||
-    rooms(a) !== rooms(b) ||
-    JSON.stringify(a.email ?? null) !== JSON.stringify(b.email ?? null)
-  );
-}

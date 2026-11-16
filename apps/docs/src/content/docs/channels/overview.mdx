@@ -10,10 +10,20 @@ import Shot from "../../../components/Shot.astro";
 import Terminal from "../../../components/Terminal.astro";
 
 A channel lets you talk to your agents from an app you already use, and lets other people reach them too. You connect
-channels in **Settings › Channels**. Each one then shows up in the sidebar under **Channels**, with its contacts and
-chats.
+channels in **Manage channels**, under **Channels** in the sidebar: a screen that lists every account with who answers it and what is
+waiting; a row opens its chats, and its two buttons its contacts and its settings (the gear). Each account also shows up in the sidebar under
+**Channels**, with its contacts and chats; its name at the top switches to another account.
 
-<Shot name="settings-channels" alt="Settings, Channels section: a connected Telegram bot with its status, who answers, and how it behaves" caption="Settings › Channels" />
+<Shot name="settings-channels" alt="The Channels screen: each messaging account with who answers it, its state and what waits for approval" caption="Channels" />
+
+An account's settings are grouped in parts and saved together with **Save**: **Account** (its name, connection and
+sign-in), **Who answers** (who you talk to, where your messages go, who answers your contacts), **Behavior** (a
+message while it works, the web, hours, **Only answers you** on the whole account, **Limits**, and **What it knows and can answer** and **Rules** for
+everyone who writes to the account; a room's or a contact's own rules go after and win), **Stickers and emoji** in chat apps, **Groups**, **Spaces** or **Rooms** where the app has them (named as the app names them),
+**Contacts** (everyone who wrote on the account, in private or in its rooms, and those you added; see
+[Who is on an account](#who-is-on-an-account)), **Approvals** (what someone new gets, and who waits) and
+**Activity** (what went out). A new account opens on **Account**: name it and connect it; the other parts open once it
+is connected, and **Create channel** keeps it.
 
 ## Available channels
 
@@ -23,7 +33,7 @@ MCP servers or paired devices. Each type below has setup instructions; several r
 | Channel | Setup and important limit |
 |---|---|
 | Telegram | [Bot setup](/channels/telegram/); direct chats and listed groups. |
-| WhatsApp | [QR linking](/channels/whatsapp/); your line or a dedicated line. |
+| WhatsApp | [QR linking](/channels/whatsapp/); your line or a dedicated line; listed groups. |
 | Discord | [Bot and rooms](/channels/discord-slack/); explicitly allow server rooms. |
 | Slack | [Socket Mode app](/channels/discord-slack/); direct messages. |
 | iMessage | [Mac permissions](/channels/imessage/); runs on the Mac hosting the core. |
@@ -40,52 +50,50 @@ MCP servers or paired devices. Each type below has setup instructions; several r
 | Microsoft Teams | [Azure bot](/channels/teams-line/#microsoft-teams); public HTTPS webhook required. |
 | LINE | [Official Account](/channels/teams-line/#line); public HTTPS webhook required. |
 
-Start in **Settings › Channels › Add channel**. A configured connection is not proof that every room, media type or
+Start in **Channels › New channel**. A second account of the same app (another WhatsApp number, another bot,
+another mailbox) is one more **New channel** of that app. Each account is a
+channel of its own: its own sign-in, contacts, chats and agents, its own row in the sidebar, and a **Name** you can
+change in its settings. iMessage is the exception: it uses the one Messages account of the Mac. A configured connection is not proof that every room, media type or
 approval button is supported: follow the service's guide and test both receipt and reply. See [devices](/devices/phone/)
 for the Android app and [integrations](/extend/integrations/) for connected services that are not channels.
-
-You can connect more than one account of the same type. Open that channel type, choose **Add account**, and connect
-the next bot, number or mailbox. Each account keeps separate credentials, contacts, rooms and delivery history. The
-exception is iMessage: it uses the one Messages identity of the Mac that runs APX.
-
-## Customer service modes (unreleased)
-
-Each account has **Customer service**, independently of **Strangers**. Strangers decides who may enter; customer
-service decides which tools an admitted person may request. Existing accounts keep **Base attention**.
-
-- **Base attention** keeps the current contact capabilities and the owner's WhatsApp handoff behavior.
-- **Consult super-agent** asks the super-agent to approve each proposed tool operation. A declined, failed or
-  incomplete review runs nothing. Approval applies to that operation and its arguments, not the entire chat.
-- **Full access** lets customers request the assigned agent's permitted tools, including MCP servers enabled and
-  approved for its project. Review the agent's tool and data scope before enabling it: broadly capable tools remain
-  broadly capable. Existing owner confirmations and owner-only settings restrictions still apply.
-
-Customers remain contacts in every mode. Service chats use the assigned agent's instructions without automatically
-loading private owner memory or other conversations. Public rooms keep their existing restrictions. Saving other
-channel settings preserves the service mode. Disabling access, blocking a customer or changing the assigned agent
-invalidates an operation that is waiting for review or confirmation.
-
-To use an MCP for customer service, enable it in the assigned agent's project, choose **Consult super-agent** or
-**Full access**, and test with a customer account. Linking your own phone as the owner is not required for customers.
 
 ## Three words: channel, contact, room
 
 - A **channel** is an app APX talks through: Telegram, WhatsApp, Discord, Slack, iMessage, Google Chat, SMS and more.
 - A **contact** is a person on a channel. Each contact has a direct chat with your agent.
-- A **room** is a shared place many people read, such as a channel on your Discord server.
+- A **room** is a shared place many people read, such as a channel on your Discord server or a WhatsApp group you
+  listed.
 
 Every contact chat and every room is kept as an APX conversation, so you can read it, search it and step in from the
 panel. Agents use the same words: they can list channels and contacts, write to a contact, read a room and post in
 one by its exact name.
 
+To leave an account's groups aside for a while, turn off **Use groups** (**Use spaces**, **Use rooms**) at the top of that part of its settings:
+everything that arrives from them is dropped (nothing kept, nothing answered) and agents cannot post there. Your list
+of rooms and their settings stay for when you turn it on again.
+
+With more than one account of an app (two WhatsApp numbers, say), an agent writes to a contact from an account it
+answers, and your secretary from yours. When the contact is only on accounts other agents answer, the agent is told to
+say which one instead of picking one for you.
+An account you start adding is kept once it connects; one left unconnected is gone the next time APX starts. iMessage
+is one per Mac.
+
 ## Where your messages land
 
-Each account has **Who answers**. It can be a global agent or an agent from any project. When you or a contact writes,
-the message starts in that account's own chat with the selected agent; it is never redirected to Home. Changing the
-agent keeps the same conversation and history, and the newly selected agent handles the following turns.
+When **you** write on a channel, your message goes to that account's **own chat**. **You** in the channel list opens
+that conversation. Home remains your main conversation in the app and terminal; channel messages do not appear there.
+An answer goes back to the account where you wrote. Later results from delegated work stay with that account too,
+even if you write on another account or in the app meanwhile. You can ask the agent to send a separate message on
+another account, but that does not move the conversation.
 
-Home remains your direct conversation with the super-agent. The super-agent can list and delegate to agents in any
-project, while an ordinary project agent keeps that project's boundaries.
+**Who you talk to** picks the agent that answers you on a channel: your super-agent or the head of one of your
+projects. Each account keeps your messages in its own chat, whether your super-agent or a project's head answers.
+**Who answers your contacts** picks, separately, who answers the
+people who write to the channel. Changing either one moves the chats it answers that are already open, with their
+history; a chat you handed to another agent stays with that agent, and so do a contact or a room you gave an agent of
+their own (**Answers** on their card, below).
+
+Saving a channel account keeps your conversation in its own chat. Home stays available in the app and terminal.
 
 ## Which channels act on your word
 
@@ -124,20 +132,73 @@ apx pairing no 482913          # drop the request
 apx pairing me 482913          # this address is mine (yours, the owner's)
 ```
 
+## Who is on an account
+
+An account's **Contacts** lists everyone who wrote on it, in private or in its rooms and groups, and those you added
+with **Add contact**: their name, their address there, their relation and when they last wrote. Being listed gives
+nobody anything: someone who only spoke in a room is not a contact until you make them one, and is answered there only
+as the room's settings say. The platforms' bots are never listed.
+
+- **Relation**, right from the list. Someone who only wrote in a room becomes a contact you haven't reviewed: kept
+  silenced, so nobody answers them in private until you approve them (on their card or from your notice).
+- **Open where they wrote** opens the room of their last message.
+- **You** is the row with the addresses APX knows as yours, saying which: what is written from them counts as yours.
+  An address becomes yours with `apx pairing me <code>`, **It's me** in an approval, or **This account is mine** in a
+  row's menu (asked first; a contact with that address is removed). **This account is not mine** asks first too, and
+  turns it back into a contact you haven't reviewed. On Discord and Slack your super-agent still checks it's really
+  you before APX acts on what you write.
+
 ## Contacts are sealed
 
-An approved person is a **contact**, with a role: you (owner), contact, or blocked. In **Base attention**, a contact's chat is **sealed**:
+An approved person is a **contact**, with a role: you (owner), contact, or blocked. A contact's chat is **sealed**:
 the agent answers them with no tools and none of your memory, so a stranger's message can't make it act for you.
 
-Open a contact from the channel's screen to set:
+Click the name at the top of a contact's chat to open their card; under the name, small marks show what is set
+for them (silenced, supervised, rules of their own, what their chat may do). The card sets:
 
+- **Relation**: client, lead, associate, provider, family, friend, partner, coworker or other. It shapes how the agent
+  talks to them; **Not set** clears it.
+- **Answers**: **Like the account** (its agent for contacts) or **Another agent**, picked from your super-agent and
+  your projects' heads. Their own agent answers them on every account, their open chats move to it, and changing the
+  account's agent for contacts leaves them with theirs.
 - **Who they are**, in your words. It reaches only the turns that answer this person.
 - **Rules**, which go last in the prompt and win over the agent's caution.
-- **What this conversation may do**: **Take appointment requests**, **Take requests** (each becomes a task for you)
-  and **Answer from my notes** (your general notes, read only). All off by default.
-- **Silence**: their messages are kept but never reach a model.
-- **Supervise**: they aren't answered on their own; you get the answer the agent would send, to send it, edit it or
+- **What this conversation may do**: **Note appointments**, **Take requests** (each becomes a task for you),
+  **Answer from my notes** (your general notes, read only) and **Answer at any hour**. Each one follows the account by
+  default (**Account: Yes** or **No**), or you set **Yes** or **No** for this person only.
+
+What every contact of an account gets by default is in that account's settings, **Contacts › For your contacts, by
+default**: all off until you turn one on. A contact's own choice wins over it, on that account and any other.
+- **Silenced** (a switch): their messages are kept but never reach a model. A silenced contact's chat shows a
+  crossed-out bell beside its name in the Inbox, and a supervised one an eye.
+- **Supervise** (a switch): they aren't answered on their own; you get the answer the agent would send, to send it, edit it or
   drop it. See [Supervised contacts](/channels/supervised/).
+
+A room's or a group's chat has its own card, beside the chat like a contact's (the **Room** or **Group** button at the
+top shows and hides it): **Answers** (**Like the account** or **Another agent** for that room only; changing the
+account's agent for contacts leaves it with its own), **When it speaks in the room** (when called, when useful, always,
+or read only, which is how you silence a room) and the **Rules** for every room of that account, the same ones as in
+the account's **Rooms** settings.
+
+The face of the agent that answers shows in front of its name, after anything else on that line ("Associate · Roby
+answers"): under each contact's or room's chat in the Inbox and in the channel's list, and at the top of an account's
+list. Accounts with rooms or groups have a **Rooms**, **Groups** or **Spaces** button there, beside **Contacts**.
+
+An account goes by the name you gave it. If you left the app's own name (WhatsApp, Telegram), it goes by the name the
+app gives it instead (your WhatsApp profile, the bot's name) or by its number, address or bot; its icon says the app.
+Small marks show what it does for everyone on it: answers only you, keeps attention hours, has rules, books
+appointments, takes requests or answers from your notes. In **Manage channels** what it does not do shows dimmed, so
+accounts compare at a glance. Point at a mark to read it. A contact's own marks show at the end of their row.
+
+The account's mark and name at the top of its list are one button: it opens a menu with its rooms, contacts and
+settings, then your other accounts. On a phone those tools are only in that menu.
+
+## An account's menu
+
+Right-click an account, in **Channels** or in the sidebar, to open it, edit it, see its contacts, turn it off or on,
+**Silence notices** or **Disconnect** it (after asking). With its notices silenced, what happens on it (someone new
+writing, a draft waiting, a room past its limit) stays out of your tray and your chat app; failures still arrive, and
+everything is still in the account (its approvals, its chats). **Notify me again** turns them back on.
 
 ### Search the web
 
@@ -171,8 +232,10 @@ apx contacts block <id>      # or unblock, rm
 Whatever the setting, a short "stop" ("stop", "pará", "basta", "cancelá") while it works stops the turn: you get
 "Done, I stopped." and nothing else.
 
-On Telegram and WhatsApp, **Messages that need no answer** chooses what an "ok", a thanks or a goodbye gets:
-**Silence** or **React** (an emoji), with no model call either way.
+Every message reaches the agent, in whatever language it comes: it decides when an "ok", a thanks or a goodbye
+needs no answer and leaves it unanswered. On Telegram, WhatsApp, Discord, Slack and iMessage, **Emoji reactions**
+(on by default) also lets it answer with an emoji on their message instead of words; where the app takes no
+reactions (Slack, iMessage) the emoji goes as a message. Turn it off and the agent answers with words or not at all.
 
 ## Attention hours
 
@@ -186,11 +249,24 @@ the day they start on (Friday 20:00–02:00 covers the first hours of Saturday).
   are answered a few at a time, the longest waiting first. A supervised contact gets its draft then.
 - If they write again once the hours have begun, that message is answered with the earlier ones in view, and only
   once.
-- You are always answered, on any channel. A contact with **Answer at any hour** (in their card) is too.
+- You are always answered, on any channel. A contact with **Answer at any hour** (in their card, or for every contact in the account's settings) is too.
 - In rooms, outside the hours only you are answered, and nothing said meanwhile is answered later.
 
 You can also ask your super-agent in chat ("answer WhatsApp Monday to Friday 9 to 18, and my dad at any hour"): it sets
-a channel's hours and who is answered at any hour, each change once you approve it. Other agents cannot.
+a channel's hours once you approve it, and who is answered at any hour as its mode allows. Other agents cannot.
+
+## Limits
+
+Each answer to a contact costs a model call, so every account caps how many it gives on its own in an hour, under
+**Behavior › Limits**:
+
+- **Answers per hour to one contact** (20 unless you change it). Past it, that person's messages are kept in their
+  chat unanswered for the rest of the hour, and you hear it once.
+- **Answers per hour in all**, for every contact of the account together (0, the default, is no limit). Past it, the
+  account's contacts wait the same way, and you hear it once.
+
+You are never limited. Rooms have their own limits, under **Rooms**: seconds between two answers to one person, and
+answers per hour in a room.
 
 ## Delivery and notices
 
@@ -200,7 +276,7 @@ as sent, maybe sent or failed. The channel's settings list what was **Recently s
 <Terminal command="apx channels outbox">{`10-08T09:14  sent      telegram  reply   Your order shipped this morning…
 10-08T09:02  sent      telegram  notice  Morning brief: 3 tasks due today…`}</Terminal>
 
-Under **Notices for you**, **Confirmations follow you** sends a question an agent asked in the app to your channel
+In **Settings › Interruptions**, **Confirmations follow you** sends a question an agent asked in the app to your channel
 if nobody answered it (after 1, 2 or 10 minutes, or never). Your super-agent's own questions come whole, with buttons
 on Telegram and numbered options on WhatsApp and Signal; elsewhere it reminds you to answer it in the app ([which
 channels act on your word](#which-channels-act-on-your-word)). Another agent's question comes as one line from your
@@ -218,7 +294,7 @@ on for that chat; that needs a voice in **Settings › Voices** too.
 | Channel | State | How it connects |
 |---|---|---|
 | [Telegram](/channels/telegram/) | Complete | A bot you create with BotFather |
-| [WhatsApp](/channels/whatsapp/) | Complete | A linked device, by QR |
+| [WhatsApp](/channels/whatsapp/) | Complete | A linked device, by QR: chats and the groups you list |
 | [Discord](/channels/discord-slack/) | Complete | A bot: direct messages and server rooms |
 | [Slack](/channels/discord-slack/) | Complete | An app in Socket Mode: direct messages |
 | [iMessage](/channels/imessage/) | Unverified | On a Mac: tools agents use, and (optional) answering the people you approve |
@@ -231,13 +307,13 @@ on for that chat; that needs a voice in **Settings › Voices** too.
 | Microsoft Teams, LINE | Unverified | A bot (Azure Bot, LINE Messaging API) that delivers to a [public address](#a-public-address-for-teams-and-line) |
 
 <Aside type="note">
-The terminal adds Telegram bots only. Every other channel is set up in **Settings › Channels**.
+The terminal adds Telegram bots only. Every other channel is set up in **Channels**.
 </Aside>
 
 ## A public address for Teams and LINE
 
 Teams and LINE don't let a bot fetch its messages: they send each one to a web address. APX only listens on your
-computer, so these two need a **public address**, set in their screen under **Settings › Channels**. It publishes
+computer, so these two need a **public address**, set in their screen under **Channels**. It publishes
 only a separate door for webhooks (`…/hooks/<channel>`), never the panel or the API, and each message is checked
 against the platform's signature before anything reads it.
 

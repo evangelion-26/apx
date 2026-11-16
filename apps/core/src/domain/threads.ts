@@ -1,11 +1,12 @@
 // Threads, what was said in them (messages, for people) and what the model saw (model_log, for the model).
 // Two projections of one conversation: the UI never reads the model log and the model never reads display parts.
-import type { ModelChoice, Thread } from "@apx/protocol";
+import type { MailMark, ModelChoice, RoutineAutonomy, Thread } from "@apx/protocol";
 import type { Updateable } from "kysely";
 import { sql } from "kysely";
 import type { Bus } from "../bus.ts";
 import type { ThreadsTable } from "../db/schema.ts";
 import { newId, now, qb, type Sql } from "./sql.ts";
+import { joinModelLogs, moveChatRows } from "./thread-join.ts";
 import { toThread } from "./thread-projection.ts";
 
 /** A summary that stands for the model log up to `upto`: a new epoch of the thread's context (engine/upkeep.ts). */
@@ -13,6 +14,8 @@ export type Epoch = { upto: number; summary: string; untrusted: boolean; runs: n
 
 /** What the context builder, the upkeep and the channels keep per thread. */
 export type ThreadContext = {
+  /** Mail capture alone leaves an unknown sender under the account's stranger policy. */
+  mail_capture_only?: boolean;
   /** Answers go back to this channel conversation while the last words came from it (in a room, as a reply to `message`). */
   reply_to?: { channel: string; conversation: string; message?: string | undefined };
   /** The other side's last message on a channel: the platform's id for it (to react to it) and its message here. */
@@ -42,17 +45,31 @@ export type ThreadContext = {
   model_choice?: ModelChoice;
   /** A worker's session: the caller's own agent, run under instructions the caller wrote for one task. */
   worker?: Worker;
+  /** A mailbox chat with only marked mail so far: its latest mark (Thread.mail_mark). */
+  mail_mark?: MailMark;
+  /** A mailbox chat whose sender wrote a mail a person wrote: it is a person's chat from then on. */
+  mail_people?: boolean;
   /** A Flow's AI model step: what it may do beyond answering (DECISIONS.md#d-172). */
   flow_step?: FlowStepContext;
+  /** A routine run's chat: the mode its routine acts in, over its agent's own (DECISIONS.md#d-223). */
+  routine_autonomy?: RoutineAutonomy;
   /** A consult an @mention in a task opened: the task, and the card in its conversation that shows the answer. */
   /** `asker`: the agent that asked on the task and the chat it asked from, where it hears the answer. */
-  consult?: { task: string; card: string; review?: boolean; asker?: { agent: string; thread: string } };
+  consult?: {
+    task: string;
+    card: string;
+    /** Its card in the chat an agent asked from (task-work.ts askerCard). */
+    shown?: string;
+    review?: boolean;
+    asker?: { agent: string; thread: string };
+  };
   /** On a task's conversation: the close (its place in the task's history) already reported to whoever created it. */
   close_reported?: number;
   /**
    * An owner-check sub-thread: the owner's chat whose channel words it checks, that chat's agent, and where its answer
    * goes out (DECISIONS.md#d-144).
    */
+  /** Where the checked answer goes; none: where the chat's answers go (words handed on from a room, D-213). */
   service_review?: {
     source_run: string;
     call_id: string;
@@ -61,7 +78,7 @@ export type ThreadContext = {
     binding: string;
     decision?: { approve: boolean; reason: string };
   };
-  owner_check?: { thread: string; agent_id: string; reply_to: { channel: string; conversation: string } };
+  owner_check?: { thread: string; agent_id: string; reply_to?: { channel: string; conversation: string } };
   /** A task chat an agent's turn started: the chat it came from, whose unattended limits its turns count against. */
   asked_from?: string;
   /** An immediate self-task takes execution from this run only; later owner turns stay independent. */
@@ -70,8 +87,19 @@ export type ThreadContext = {
   task_dispatches?: { run: string; tasks: Array<{ task: string; agent: string; project?: string | undefined }> };
   /** The source of a self-task's existing findings, without copying trusted instructions or permissions. */
   handoff_from?: { thread: string; run: string };
+  /** Project coordination that most recently started this existing task; its result returns there. */
+  coordination_from?: { thread: string; run: string; work_run: string };
+  /** Review returns already reported to the coordinating chat, keyed by the completed reviewer run. */
+  coordination_feedback?: string[];
   /** Native tool permissions cannot be revoked or reliably correlated with completion by every harness. */
   external_grant_run?: string;
+  /**
+   * A group chat (engine/group.ts): its members, who answers next, the run answering now and, per member, the last
+   * message of the group it has read.
+   */
+  group?: { members: string[]; queue: string[]; speaking?: string | undefined; seen: Record<string, number> };
+  /** A member's own chat under a group chat: the group's thread id. */
+  member_of?: string;
   /** A task chat that stalled: when APX last asked its agent to go on, and the stop since then the owner was told of. */
   stall?: { revived_at: string; told?: string };
   /** Tasks agents gave from this chat while it was paused: each starts once the owner lets agents go on. */
@@ -119,7 +147,16 @@ export type FanoutGroup = {
 };
 
 /** A task's start an agent asked for, kept until the owner lets agents go on: who works it, and who asked. */
-export type HeldTask = { task: string; agent: string; run: string; depth: number };
+export type HeldTask = {
+  task: string;
+  agent: string;
+  run: string;
+  depth: number;
+  /** Latest run in each existing task chat when the start was held; missing on older records. */
+  prior_runs?: string[];
+  /** Event count at the hold, so later owner reassignment or scope changes cannot revive stale work. */
+  prior_events?: number;
+};
 
 /** A throwaway helper an agent starts for one task: a name, its instructions and (optionally) fewer tools. */
 /**
@@ -151,7 +188,15 @@ export const strictestWrite = (first: Write, ...rest: Write[]): Write =>
   rest.reduce((m, w) => (WRITE_STRICTNESS[w] > WRITE_STRICTNESS[m] ? w : m), first);
 
 const PREVIEW_CHARS = 160;
-export const previewOf = (text: string) => text.slice(0, PREVIEW_CHARS);
+/**
+ * A chat's last line in a list; a mail's leading "[subject: …]" (email.ts) shows as its subject, and the note on mail
+ * read from before the mailbox was added ("[historical mail; …]") is the agent's, not the list's.
+ */
+export const previewOf = (text: string) =>
+  text
+    .replace(/^\[historical mail[^\]\n]*\]\n?/, "")
+    .replace(/^\[subject: ([^\]\n]*)\]\n?/, "$1 · ")
+    .slice(0, PREVIEW_CHARS);
 
 export function threadsRepo({ one, all, run }: Sql, bus: Bus, endSession: (thread: string) => void = () => {}) {
   const repo = {
@@ -165,7 +210,7 @@ export function threadsRepo({ one, all, run }: Sql, bus: Bus, endSession: (threa
       } = {},
     ): Thread[] {
       const { project_id, engine } = opts;
-      return all(
+      const base = () =>
         qb
           .selectFrom("threads")
           .selectAll()
@@ -188,12 +233,20 @@ export function threadsRepo({ one, all, run }: Sql, bus: Bus, endSession: (threa
           .where((eb) => eb.or([eb("kind", "!=", "routine"), eb("archived", "=", 0)]))
           .$if(!!project_id, (q) => q.where("project_id", "=", project_id as string))
           // An engine's sessions: the engine itself, never an agent's chat that happens to run on its model.
-          .$if(!!engine, (q) => q.where("engine", "=", engine as string))
-          // Pinned first, so the cap never drops one.
+          .$if(!!engine, (q) => q.where("engine", "=", engine as string));
+      const cap = opts.limit === null ? undefined : (opts.limit ?? 300);
+      // Pinned first, so the cap never drops one.
+      const rows = all(
+        base()
           .orderBy("pinned", "desc")
           .orderBy("updated_at", "desc")
-          .$if(opts.limit !== null, (q) => q.limit(opts.limit ?? 300)),
-      ).map(toThread);
+          .$if(cap !== undefined, (q) => q.limit(cap as number)),
+      );
+      // Contact and room chats are few and a channel lists them all: busy task chats never push one out.
+      if (cap === undefined || cap <= 1 || rows.length < cap) return rows.map(toThread);
+      const seen = new Set(rows.map((r) => r.id));
+      const chats = all(base().where("kind", "=", "channel").orderBy("updated_at", "desc"));
+      return [...rows, ...chats.filter((r) => !seen.has(r.id))].map(toThread);
     },
     /** Every delegated descendant, independent of the global chat list's recency cap. */
     descendants(root: string, includeArchived = false): Thread[] {
@@ -293,6 +346,26 @@ export function threadsRepo({ one, all, run }: Sql, bus: Bus, endSession: (threa
       return all(
         qb.selectFrom("threads").select("id").where(sql`json_extract(context, '$.asked_from')`, "=", threadId),
       ).map((r) => r.id);
+    },
+    /**
+     * The teammates an agent asked on its task from `chat`: they hang under the task's conversation, not under the
+     * chat, so they are found through the chat's task.
+     */
+    consultsFrom(chat: string, includeArchived = false): Thread[] {
+      const task = one(qb.selectFrom("threads").select("task_id").where("id", "=", chat))?.task_id;
+      const home = task && one(qb.selectFrom("tasks").select("thread_id").where("id", "=", task))?.thread_id;
+      if (!home) return [];
+      return all(
+        qb
+          .selectFrom("threads")
+          .selectAll()
+          .where("parent_id", "=", home)
+          .where("kind", "=", "a2a")
+          .$if(!includeArchived, (q) => q.where("archived", "=", 0))
+          .orderBy("updated_at", "desc"),
+      )
+        .filter((r) => (JSON.parse(r.context) as ThreadContext).consult?.asker?.thread === chat)
+        .map(toThread);
     },
     /** The a2a sessions a thread opened, newest first. */
     sessions(parentId: string): Thread[] {
@@ -400,6 +473,72 @@ export function threadsRepo({ one, all, run }: Sql, bus: Bus, endSession: (threa
         ...(c.their_last?.conversation === from ? { their_last: { ...c.their_last, conversation: to } } : {}),
       });
     },
+    /**
+     * One chat its platform kept under two addresses: `from`'s messages, turns, model log, memory work, files, drafts,
+     * held messages and sub-chats go into `to`'s chat in time order and `from`'s chat is removed (an outside engine's session of it ends
+     * with it); with no chat under `to`, `from`'s goes on under it. Not while either has a turn going ("busy": try
+     * again later).
+     */
+    joinChats(channel: string, from: string, to: string): "joined" | "none" | "busy" {
+      const gone = repo.byConversation(channel, from);
+      if (!gone) return "none";
+      const kept = repo.byConversation(channel, to);
+      if (!kept) {
+        repo.readdress(channel, from, to);
+        return "joined";
+      }
+      if (repo.busy([gone.id, kept.id])) return "busy";
+      const theirs = repo.context(gone.id).their_last;
+      const keptTheirs = repo.context(kept.id).their_last;
+      const ids = all(
+        qb
+          .selectFrom("messages")
+          .select("id")
+          .where("thread_id", "in", [gone.id, kept.id])
+          .orderBy("created_at")
+          .orderBy("seq"),
+      ).map((r) => r.id);
+      // Negative first, so no two messages ever share a place in the kept chat while they are renumbered.
+      for (const [i, id] of ids.entries())
+        run(
+          qb
+            .updateTable("messages")
+            .set({ thread_id: kept.id, seq: -(i + 1) })
+            .where("id", "=", id),
+        );
+      run(
+        qb
+          .updateTable("messages")
+          .set((eb) => ({ seq: eb.neg(eb.ref("seq")) }))
+          .where("thread_id", "=", kept.id)
+          .where("seq", "<", 0),
+      );
+      // What the model saw and what the agent remembers of it go too: the next turn goes on from both chats.
+      joinModelLogs({ all, run }, gone.id, kept.id);
+      moveChatRows({ one, run }, { id: gone.id, address: from }, { id: kept.id, address: to });
+      run(qb.updateTable("threads").set({ parent_id: kept.id }).where("parent_id", "=", gone.id));
+      // A summary counts places in the kept chat's old order: it is made again from the whole history.
+      repo.mergeContext(kept.id, {
+        compaction: undefined,
+        // Their last message is the newer chat's, so a reaction goes on what they said last.
+        ...(theirs && (!keptTheirs || gone.updated_at > kept.updated_at)
+          ? { their_last: { ...theirs, conversation: to } }
+          : {}),
+      });
+      const newer = gone.updated_at > kept.updated_at;
+      run(
+        qb
+          .updateTable("threads")
+          .set({
+            unread: kept.unread + gone.unread,
+            ...(newer ? { updated_at: gone.updated_at, preview: gone.preview } : {}),
+          })
+          .where("id", "=", kept.id),
+      );
+      repo.remove([gone.id]);
+      bus.emit({ type: "thread.updated", thread: repo.get(kept.id) as Thread });
+      return "joined";
+    },
     /** A thread whose history was brought in: its last activity and preview are the history's own. */
     settle(id: string, at: string, preview: string): void {
       run(qb.updateTable("threads").set({ updated_at: at, preview }).where("id", "=", id));
@@ -422,13 +561,6 @@ export function threadsRepo({ one, all, run }: Sql, bus: Bus, endSession: (threa
       if (t.agent_ids.includes(agentId)) return t;
       return repo.write(id, { agent_ids: JSON.stringify([...t.agent_ids, agentId]) });
     },
-    /** A channel's configured agent takes its next turn; previous message authors stay unchanged. */
-    assign(id: string, agentId: string, projectId?: string): Thread {
-      const t = repo.get(id);
-      if (!t) throw new Error(`unknown thread ${id}`);
-      if (t.agent_ids.length === 1 && t.agent_ids[0] === agentId && t.project_id === projectId) return t;
-      return repo.write(id, { agent_ids: JSON.stringify([agentId]), project_id: projectId ?? null });
-    },
     /** Another agent takes the chat over: it answers there now, and what the old one said shows as its own. */
     handOver(id: string, from: string, to: string): Thread {
       const t = repo.get(id);
@@ -443,6 +575,55 @@ export function threadsRepo({ one, all, run }: Sql, bus: Bus, endSession: (threa
       );
       const ids = [to, ...t.agent_ids.filter((a) => a !== from && a !== to)];
       return repo.write(id, { agent_ids: JSON.stringify(ids) });
+    },
+    /**
+     * A channel's chats still answered by `from` go to `to` and its project: the owner's own chats (`owners`) or those of
+     * its contacts and rooms. A chat handed to another agent keeps it, and so do the chats of the people in `except`
+     * (contacts the owner gave an agent of their own); past messages keep their authors.
+     */
+    moveAnswerer(o: {
+      channel: string;
+      owner: string;
+      owners: boolean;
+      from: string;
+      to: string;
+      /** The project of `to`; a chat takes it only while it is in `fromProject` (the owner may have moved it). */
+      project?: string | undefined;
+      fromProject?: string | undefined;
+      /** People whose own agent answers them: their chats stay as they are. */
+      except?: ReadonlySet<string>;
+      /** Rooms (by conversation) whose own agent answers them: their chats stay as they are. */
+      exceptRooms?: ReadonlySet<string>;
+    }) {
+      for (const r of all(qb.selectFrom("threads").selectAll().where("channel", "=", o.channel))) {
+        const t = toThread(r);
+        if ((t.channel?.person_id === o.owner) !== o.owners || t.agent_ids[0] !== o.from) continue;
+        if (t.channel?.person_id && o.except?.has(t.channel.person_id)) continue;
+        if (!t.channel?.person_id && t.channel?.conversation && o.exceptRooms?.has(t.channel.conversation)) continue;
+        repo.write(t.id, {
+          agent_ids: JSON.stringify([o.to, ...t.agent_ids.filter((a) => a !== o.from && a !== o.to)]),
+          ...(t.project_id === o.fromProject ? { project_id: o.project ?? null } : {}),
+        });
+      }
+    },
+    /**
+     * A person's chats on channels go to whoever `answerer` names for each channel (undefined: that chat stays as it
+     * is); past messages keep their authors.
+     */
+    movePerson(personId: string, answerer: (channel: string) => { agent: string; project?: string } | undefined) {
+      for (const r of all(qb.selectFrom("threads").selectAll().where("person_id", "=", personId))) {
+        const t = toThread(r);
+        const next = t.channel ? answerer(t.channel.id) : undefined;
+        if (next && t.agent_ids[0] !== next.agent) repo.handTo(t, next.agent, next.project);
+      }
+    },
+    /** The chat's answerer becomes `to` (the one before steps aside), working in `project`. */
+    handTo(t: Thread, to: string, project: string | undefined): Thread {
+      const from = t.agent_ids[0];
+      return repo.write(t.id, {
+        agent_ids: JSON.stringify([to, ...t.agent_ids.filter((a) => a !== from && a !== to)]),
+        project_id: project ?? null,
+      });
     },
     /** The owner's arrangement: their own name (null = the automatic title), pinned, archived. Not activity. */
     arrange(id: string, a: { custom_title?: string | null; pinned?: boolean; archived?: boolean }): Thread {

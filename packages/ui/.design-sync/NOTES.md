@@ -1,5 +1,7 @@
 # design-sync notes — @apx/ui
 
+- SegmentedControl accepts `disabled` for the whole radio group, including keyboard interaction; preserve it on re-sync.
+
 - Claude Design project: "APX UI" (`adfa91bc-fe19-4d97-a98e-d968b4457ebe`), first synced 2026-09-30 with 38 components, all authored and graded good. Re-syncs take the atomic path: fetch `_ds_sync.json` into `.design-sync/.cache/remote-sync.json`, then run `resync.mjs --remote …`.
 
 - Config home is `apx-v2/packages/ui` (the DS package itself). Run everything from there.
@@ -14,6 +16,9 @@
 - Preview content uses generic names only (Acme, Northwind, Globex, Roby, Ledger, Scout…). Never real client/project names.
 
 ## Pending re-sync
+- SegmentedControl gained `disabled` (the choice shows, dimmed, and cannot change); re-sync it and its CSS.
+- SettingRow's control wraps its own items (a picker and its button) inside the screen's width on a phone; re-sync
+  the shared CSS bundle.
 - ResizeHandle can fold its column (`collapsed`, `collapsedWidth`, `onCollapsedChange`): a click or Enter toggles
   it, a drag past halfway to the rail snaps it. The panel's sidebar uses it in place of a topbar button; not in the
   Claude Design project yet.

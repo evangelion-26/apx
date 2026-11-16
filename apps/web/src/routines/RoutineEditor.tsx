@@ -1,13 +1,15 @@
-import type { CallModel, RoutineAction } from "@apx/protocol";
+import type { CallModel, RoutineAction, RoutineAutonomy } from "@apx/protocol";
 import { TURN_STEPS } from "@apx/protocol/client";
 import { Button, Dialog, Field, Icons, Input, SegmentedControl, Select, SuggestTextarea, Switch } from "@apx/ui";
 import { type ReactNode, useState } from "react";
 import { AgentSelect } from "../common/pickers/AgentSelect.tsx";
+import { ProjectSelect } from "../common/pickers/ProjectSelect.tsx";
 import { secretary } from "../data/identity.ts";
 import { type RoutineDraft, saveRoutine } from "../data/routines.ts";
 import { useData } from "../data/state.ts";
 import { type MessageKey, useT } from "../i18n/index.ts";
-import { ScheduleEditor, scheduleText } from "./Schedule.tsx";
+import { ScheduleEditor } from "./Schedule.tsx";
+import { scheduleText } from "./scheduleText.ts";
 import { postVars, promptVars } from "./vars.ts";
 
 const ACTIONS: Array<{ value: RoutineAction; key: MessageKey; hint: MessageKey; icon: typeof Icons.Bot }> = [
@@ -16,6 +18,10 @@ const ACTIONS: Array<{ value: RoutineAction; key: MessageKey; hint: MessageKey; 
   { value: "shell", key: "routines.action.shell", hint: "routines.action.shellHint", icon: Icons.Terminal },
   { value: "watch", key: "routines.action.watch", hint: "routines.action.watchHint", icon: Icons.Eye },
 ];
+
+/** How its runs act: as its agent, or a mode the owner picks for this routine alone (DECISIONS.md#d-223). */
+const AUTONOMIES: Array<RoutineAutonomy | ""> = ["", "manual", "auto", "total"];
+const autonomyKey = (a: RoutineAutonomy | "") => a || "agent";
 
 /** "Go on" after the pre-command: always, only if it printed something, only if it succeeded or failed, never. */
 const CONDITIONS: Array<{ value: CallModel; key: MessageKey }> = [
@@ -37,6 +43,11 @@ export function RoutineEditor({ draft, onClose }: { draft: RoutineDraft; onClose
   const [d, setD] = useState(draft);
   const [saving, setSaving] = useState(false);
   const set = (p: Partial<RoutineDraft>) => setD((cur) => ({ ...cur, ...p }));
+  // Where it runs: its project's tools, files and secrets. An agent of another project cannot run it there.
+  const pickProject = (project: string | undefined) => {
+    const home = d.agent ? agents[d.agent]?.project_id : undefined;
+    set(home && home !== project ? { project, agent: "" } : { project });
+  };
   const shell = d.action === "shell";
   // A watcher and a relay call their agent only when there is something new, with what it is as data.
   const watch = d.action === "watch" || d.action === "relay";
@@ -114,12 +125,16 @@ export function RoutineEditor({ draft, onClose }: { draft: RoutineDraft; onClose
               }))}
             />
           </Field>
+          <Field label={t("pickers.project")}>
+            <ProjectSelect value={d.project} onChange={pickProject} />
+          </Field>
           {(d.action === "agent" || watch) && (
             <Field label={t("routines.agent")}>
               <AgentSelect
                 value={agent || undefined}
                 projectId={d.project}
-                onChange={(id) => id && set({ agent: id })}
+                all={!d.project}
+                onChange={(id, home) => id && set(home ? { agent: id, project: home } : { agent: id })}
               />
             </Field>
           )}
@@ -128,7 +143,25 @@ export function RoutineEditor({ draft, onClose }: { draft: RoutineDraft; onClose
           </Field>
           {!shell && (
             <Field label={t("routines.anchor")} hint={t("routines.anchorHint")}>
-              <Switch checked={d.anchor} label={t("routines.anchor")} onCheckedChange={(anchor) => set({ anchor })} />
+              <Switch
+                checked={d.anchor}
+                aria-label={t("routines.anchor")}
+                onCheckedChange={(anchor) => set({ anchor })}
+              />
+            </Field>
+          )}
+          {!shell && d.action !== "message" && (
+            <Field label={t("routines.autonomy")} hint={t("routines.autonomyNote")}>
+              <Select
+                label={t("routines.autonomy")}
+                value={autonomyKey(d.autonomy)}
+                onValueChange={(v) => set({ autonomy: v && v !== "agent" ? (v as RoutineAutonomy) : "" })}
+                options={AUTONOMIES.map((a) => ({
+                  value: autonomyKey(a),
+                  label: t(`routines.autonomy.${autonomyKey(a)}`),
+                  description: t(`routines.autonomyHint.${autonomyKey(a)}`),
+                }))}
+              />
             </Field>
           )}
           {!shell && d.action !== "message" && (

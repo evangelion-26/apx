@@ -16,7 +16,7 @@ test("another project opened from the sidebar keeps the tab that was open", asyn
   await open(page);
   await page.getByRole("button", { name: "Northwind", exact: true }).click();
   await page.getByRole("tab", { name: "Memoria" }).click();
-  await page.getByRole("button", { name: /^acme/i }).click();
+  await page.getByRole("button", { name: "acme", exact: true }).click();
   await expect(page.getByRole("tab", { name: "Memoria" })).toHaveAttribute("aria-selected", "true");
 });
 
@@ -33,8 +33,8 @@ test("the imported project keeps its notes and its routine, which came in off", 
 
 test("a project's files open as text", async ({ page }) => {
   await open(page);
-  await page.getByRole("button", { name: /^acme/i }).click();
-  await page.getByRole("tab", { name: "Archivos" }).click();
+  await page.getByRole("button", { name: "acme", exact: true }).click();
+  await page.getByRole("tab", { name: "Directorio" }).click();
   await page.getByRole("button", { name: "README.md" }).click();
   await expect(page.getByText("A small shop.")).toBeVisible();
 });
@@ -43,8 +43,8 @@ test("a project's text file opens as code with line numbers, is edited and saved
   const { repo } = await world.info();
   fs.writeFileSync(path.join(repo, "price.ts"), "export const TAX = 0.21;\n");
   await open(page);
-  await page.getByRole("button", { name: /^acme/i }).click();
-  await page.getByRole("tab", { name: "Archivos" }).click();
+  await page.getByRole("button", { name: "acme", exact: true }).click();
+  await page.getByRole("tab", { name: "Directorio" }).click();
   await page.getByRole("button", { name: "price.ts" }).click();
   const code = page.locator(".cm-content");
   await expect(code).toContainText("export const TAX = 0.21;");
@@ -61,9 +61,14 @@ test("a project's text file opens as code with line numbers, is edited and saved
 
 test("the owner's Claude Code and Codex sessions are listed", async ({ page }) => {
   await open(page);
-  await page.getByRole("button", { name: "Claude Code", exact: true }).click();
+  // A row narrows the Inbox; the sessions on this computer are the row's "All sessions".
+  const sessions = async (engine: string) => {
+    await page.getByRole("button", { name: engine, exact: true }).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Todas las sesiones" }).click();
+  };
+  await sessions("Claude Code");
   await expect(page.getByText("Refactor the cart module")).toBeVisible();
-  await page.getByRole("button", { name: "Codex", exact: true }).click();
+  await sessions("Codex");
   await expect(page.getByText("Add a footer")).toBeVisible();
 });
 
@@ -76,7 +81,7 @@ test("a plain folder becomes a project from the sidebar and opens", async ({ pag
   await dialog.getByRole("button", { name: "Sumar" }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByRole("heading", { name: "globex" })).toBeVisible();
-  await page.getByRole("tab", { name: "Archivos" }).click();
+  await page.getByRole("tab", { name: "Directorio" }).click();
   await expect(page.getByRole("button", { name: "AGENTS.md" })).toBeVisible();
 });
 
@@ -107,8 +112,8 @@ test("a project file can be renamed and moved to trash from its context menu", a
   fs.writeFileSync(trashed, "remove this fixture\n");
   try {
     await open(page);
-    await page.getByRole("button", { name: /^acme/i }).click();
-    await page.getByRole("tab", { name: "Archivos" }).click();
+    await page.getByRole("button", { name: "acme", exact: true }).click();
+    await page.getByRole("tab", { name: "Directorio" }).click();
 
     await page.getByRole("button", { name: "rename-me.txt" }).click({ button: "right" });
     await page.getByRole("menuitem", { name: "Renombrar" }).click();

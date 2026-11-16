@@ -32,7 +32,7 @@ pnpm app                                   # build panel + desktop, start the co
 pnpm dev                                   # core only, on 127.0.0.1:7440, home ~/.apx/v2 (override APX_HOME/APX_PORT)
 node apps/terminal/src/main.ts status      # is the core up, and is it running my code? (code_sha)
 pnpm --filter @apx/web dev                 # panel on :7441, proxies /rpc, /ws, /health to the core
-pnpm preflight                             # check:private + schema + lint + check:ui + check:dead + typecheck + test — must be green before push
+pnpm preflight                             # check:private + decisions + schema + lint + check:ui + check:dead + typecheck + test — must be green before push
 pnpm verify                                # preflight + e2e (web, desktop) + perf budgets — what CI runs; green before merge
 pnpm package                               # this OS's installer + daemon bundle in out/ (CI: push a v2.x.y tag)
 pnpm package:linux                         # cross-build Linux or Windows (:win); :mac requires macOS + Xcode tools
@@ -219,6 +219,7 @@ expected `code_sha`) and the changed path is exercised for real; anything not ex
 | How to verify | [`rules/TESTING.md`](rules/TESTING.md) |
 | Fixing a bug or repairing a failing test | [`rules/TESTING.md#fix-regression-contract`](rules/TESTING.md#fix-regression-contract) |
 | Adding to the prompt or a tool | [`rules/PROMPT_SIZE.md`](rules/PROMPT_SIZE.md) |
+| Model lists, default model ids, a provider retiring a model | [`rules/MODEL_CATALOGS.md`](rules/MODEL_CATALOGS.md) |
 | Adding periodic work (polling, reminders, a job on a timer) | [`rules/DECISIONS.md#d-171`](rules/DECISIONS.md#d-171): a background check set where it lives, not a routine |
 | Product direction | `plan/01-arquitectura-v2.md`, `plan/00-plan-maestro.md` (maintainers' checkout) |
 | Design system | [`packages/ui/.design-sync/NOTES.md`](packages/ui/.design-sync/NOTES.md), `packages/ui/src/components/*.md` |

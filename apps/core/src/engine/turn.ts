@@ -1,6 +1,7 @@
 // One run, start to end: context in, harness loop, every tool call through one executor, an honest end state.
 import path from "node:path";
 import {
+  type Autonomy,
   CHROME_VIA,
   COMPUTER_CAP,
   type HarnessId,
@@ -13,58 +14,94 @@ import {
 } from "@apx/protocol";
 import { readOrganization } from "../apc/org.ts";
 import type { AgentRecord } from "../domain/agents.ts";
+import { memorySettings } from "../domain/memory-settings.ts";
 import { ownerIdentity, ownerTimeZone } from "../domain/owner.ts";
+import { worksIn } from "../domain/projects.ts";
 import { engineOf, harnessOf, isCliRef } from "../domain/refs.ts";
 import { inChrome, type RunRecord, runsOnComputer } from "../domain/runs.ts";
 import type { Store } from "../domain/store.ts";
 import { previewOf, type Worker, worksInFolder } from "../domain/threads.ts";
+import { computerBriefing, HOME_COMPUTER } from "../environments/briefing.ts";
 import { AGENT_WORKSPACE } from "../environments/worker.ts";
 import { CallError, Canceled, DeadlineExceeded, errorMessage, Shutdown, Superseded } from "../errors.ts";
 import type { Harnesses, TurnIO, TurnOutcome } from "../harness/index.ts";
+import { systemNote } from "../harness/native.ts";
 import type { Log } from "../log.ts";
 import { candidates, modelSettings } from "../models/choice.ts";
 import type { ChatItem, Usage } from "../providers/types.ts";
 import { ProviderError } from "../providers/types.ts";
 import { contextWindow } from "../providers/windows.ts";
 import { saveLocalAttachment } from "../services/attachment-files.ts";
+import { askedSkill } from "../skills/picker.ts";
 import type { RuntimeHomes } from "../skills/runtimes.ts";
+import { agentSkills, skillCatalog, skillsFor } from "../skills/skills.ts";
+import { contactHolder, contactToolNames } from "../tools/contact.ts";
 import { channelsOn } from "../tools/directory.ts";
-import { harnessDir, scratchDir } from "../tools/folders.ts";
+import { harnessDir, readOnlyFolders, scratchDir, workDir } from "../tools/folders.ts";
+import { chatPlanBlock } from "../tools/plan.ts";
 import { modeOf } from "../tools/policy.ts";
+import { waitingBlock } from "../tools/requests.ts";
 import { UNTRUSTED_MARK, untrusted } from "../tools/result.ts";
 import { type Tool, toSpec } from "../tools/types.ts";
-import { type Audience, audienceOf, contactPrompt, roomPrompt, sealedWeb } from "./audience.ts";
+import { attachmentsBlock } from "./attachments.ts";
+import {
+  type Audience,
+  audienceOf,
+  contactPrompt,
+  ownerInstruction,
+  roomInput,
+  roomPrompt,
+  sealedWeb,
+} from "./audience.ts";
 import { gitChanges, gitSnapshot, turnChanges } from "./changes.ts";
 import { SERVICE_REVIEW_PROMPT } from "./channel-review.ts";
 import { channelService, serviceEnabled } from "./channel-service.ts";
 import { channelServicePrompt } from "./channel-service-prompt.ts";
+import { memoryQuery, recallChats } from "./chat-recall.ts";
 import {
   agentsMdOf,
+  CHAT_CHANNELS,
+  COMPUTER_WORKSPACE,
   flowBotPrompt,
+  frameInput,
+  HISTORY_BUDGET_CHARS,
+  type InputBlock,
+  joinInput,
   orgText,
   type ProjectBrief,
+  project,
+  releaseBlock,
+  rosterBlock,
   type Sections,
   sectionLines,
   systemParts,
   systemPrompt,
+  teamPlace,
+  turnBlocks,
   workerPrompt,
+  workspaceBlock,
 } from "./context.ts";
 import { type Caller, type DelegateTo, resultCard } from "./delegation.ts";
 import { type Display, openDisplay } from "./display.ts";
 import { createExecutor, type Executor } from "./executor.ts";
+import { flowEditorBlock } from "./flow-editor.ts";
 import type { Hooks } from "./hooks.ts";
 import type { Inputs } from "./inputs.ts";
 import type { Jobs } from "./jobs.ts";
+import { lastTalk, unasked } from "./last-talk.ts";
 import type { MemoryIndex } from "./memory-index.ts";
+import { memoryHistory, snapshotOf, visibleMemoryRuns, windowRuns } from "./memory-projection.ts";
+import { ratingNote, sentMeanwhile } from "./nudges.ts";
+import { taskBlock } from "./office.ts";
 import type { Permissions } from "./permissions.ts";
 import { POST_AFTER_DEADLINE_MS, routinePipeline, routineWithCommands, stepsFor } from "./pipeline.ts";
 import { type ProfileRoot, profileBlock } from "./profiles.ts";
-import { resetLabel } from "./provider-limit.ts";
+import { LIMIT_RESUME_NOTE, resetLabel } from "./provider-limit.ts";
+import { recallFor } from "./recall.ts";
 import { keepContext } from "./received.ts";
-import { closeTurnLog } from "./recovery.ts";
-import type { SkillPicker } from "./skill-pick.ts";
-import { buildContext } from "./turn-context.ts";
-import { turnTools } from "./turn-tools.ts";
+import { closeTurnLog, RESUME_NOTE } from "./recovery.ts";
+import { askedPick, type SkillPicker } from "./skill-pick.ts";
+import { channelKindOf, reactionsOff, turnTools } from "./turn-tools.ts";
 
 /** How the owner's words written while a turn works reach its model. */
 export const OWNER_ADDS = "[The owner adds, while you work]";
@@ -433,6 +470,230 @@ function skipModel(
 }
 
 /** The model's view of the thread and this turn's framed input (with notes and the roster when they apply). */
+async function buildContext(deps: TurnDeps, turn: Turn, run: RunRecord, mode: Autonomy) {
+  const { store } = deps;
+  const { agent, thread } = turn;
+  // A contact's turn knows nothing of the owner's: no notes, no roster, no skills. An engine session is the engine
+  // itself: none of an agent's notes, roster, skills or framing either.
+  const direct = Boolean(thread.engine);
+  const sealed = turn.audience.kind === "contact" || direct;
+  const ctxState = store.threads.context(thread.id);
+  // A bot of a Flow keeps no memory; a Flow step that may not delegate needs no roster (DECISIONS.md#d-172).
+  const step = ctxState.flow_step;
+  const remembers = !sealed && !step?.bot && memorySettings(store).mode !== "off";
+  // A public room's turn reads the room's latest messages instead of a history of its own.
+  const room = turn.audience.kind === "contact" ? turn.audience.room : undefined;
+  const entries = memoryHistory(store, store.modelLog.list(thread.id), agent.id, thread.project_id);
+  const projected = room
+    ? { items: [] as ChatItem[], from: 0 }
+    : project(entries, HISTORY_BUDGET_CHARS, ctxState.compaction);
+  const { from } = projected;
+  const roster = rosterBlock(agent, store.agents.list(), thread, (a) =>
+    worksIn(store.projects, a.project_id, thread.project_id),
+  );
+  const told = sectionsFor(deps, turn, mode);
+  // An agent allowed the computer reads its state each turn, as the owner sees it in the panel.
+  const vm = deps.vm;
+  const allowed = vm && !sealed && vm.permitted(agent.id, thread.id);
+  const computer = !allowed
+    ? undefined
+    : vm.serves(thread.id)
+      ? computerBriefing(await vm.status(thread.id, true), agent.id, thread.id, told.computer === "chat")
+      : thread.kind === "home" && told.computer !== "home"
+        ? HOME_COMPUTER
+        : undefined;
+  // A worker delegates to no one: it needs no roster.
+  const rosterChanged =
+    !sealed &&
+    !turn.worker &&
+    (!step || step.delegate) &&
+    (ctxState.roster_hash !== roster.hash || ctxState.roster_agent !== agent.id);
+  const available = sealed
+    ? []
+    : agentSkills(agent, skillsFor(store, { home: deps.home, apps: deps.skillApps }, thread.project_id));
+  // A skill named with "/name" goes in as asked; otherwise skills are weighed while notes are recalled (both wait on
+  // the embedding engine).
+  const asked = askedSkill(turn.input.text, available);
+  const picking = asked ? Promise.resolve(askedPick(asked)) : deps.skills?.pick(turn.input.text, available);
+  const recalled = remembers
+    ? await recallFor(
+        store,
+        deps.memory.search,
+        agent.id,
+        thread,
+        memoryQuery(store, thread.id, turn.input.text),
+        ctxState,
+        from,
+        turn.input.origin.kind === "agent",
+      )
+    : {};
+  const chats = remembers
+    ? await recallChats(store, deps.memory, agent.id, thread, turn.input.text, {
+        excludeRuns: visibleMemoryRuns(store, entries, from, run.id),
+      })
+    : undefined;
+  const picked = await picking;
+  // A plugin's context is for the owner's own turns only (not other agents', apps' or contacts'), as outside data.
+  const o = turn.input.origin;
+  const ownerTurn =
+    o.kind === "user" ||
+    o.kind === "input_answer" ||
+    o.kind === "routine" ||
+    (o.kind === "channel" && o.role === "owner");
+  const extra =
+    !sealed && ownerTurn && deps.hooks
+      ? await deps.hooks.context({
+          thread: { id: thread.id, kind: thread.kind, title: thread.title, project_id: thread.project_id },
+          agent: { id: agent.id, name: agent.name },
+          text: turn.input.text.slice(0, 4000),
+        })
+      : undefined;
+  // In a contact's chat the owner's own words (typed in the app) say what to answer that contact (a room's: roomInput).
+  const said =
+    turn.audience.kind === "contact" && !turn.audience.room && o.kind === "user"
+      ? ownerInstruction(turn.audience.name, turn.input.text)
+      : turn.input.text;
+  const files = attachmentsBlock(
+    store,
+    turn.input.attachments ?? [],
+    turn.audience.kind === "contact" ? undefined : { home: deps.home, thread },
+  );
+  const liveThread = store.threads.get(thread.id);
+  if (!liveThread || liveThread.project_id !== thread.project_id || !liveThread.agent_ids.includes(agent.id))
+    throw new Error("chat access changed while preparing its context");
+  const memoryBlock =
+    memorySettings(store).mode !== "off" ? [recalled.text, chats?.render()].filter(Boolean).join("\n") : "";
+  const images = (turn.input.attachments ?? []).filter((a) => a.kind === "image");
+  const message = (text: string): InputBlock[] => [{ name: "message", text }];
+  // A resumed turn already has its message in the history: it only learns why it stopped.
+  const resumeNote =
+    turn.input.resume_of && store.runs.get(turn.input.resume_of)?.end_reason === "provider_limit"
+      ? LIMIT_RESUME_NOTE
+      : RESUME_NOTE;
+  const blocks: InputBlock[] = turn.input.resume_of
+    ? message(String(systemNote(resumeNote).content))
+    : room
+      ? message(
+          roomInput(store, {
+            threadId: thread.id,
+            runId: run.id,
+            agentName: agent.name,
+            from: o.kind === "channel" ? o.name : "your owner",
+            owner: o.kind !== "channel" || o.role === "owner",
+            text: said,
+            app: o.kind === "user",
+          }),
+        )
+      : direct
+        ? // An engine session gets no header, but a result or outside text still says what it is and what to do.
+          message(o.kind === "go_on" ? said : frameInput(o, files ? `${said}\n\n${files}` : said))
+        : turnBlocks({
+            origin: turn.input.origin,
+            text: files ? `${said}\n\n${files}` : said,
+            now: new Date(),
+            roster: rosterChanged ? roster.text : undefined,
+            memory: memoryBlock,
+            skills: picked?.block || undefined,
+            task: taskBlock(store, thread),
+            plan: chatPlanBlock(store, thread),
+            flowEditor: ownerTurn ? flowEditorBlock(store, thread.id) : undefined,
+            extension: extra ? untrusted("extension_context", { from: extra.from }, extra.text) : undefined,
+            waiting: !sealed && ownerTurn && o.kind !== "routine" ? waitingBlock(store, agent.id) : undefined,
+            timeZone: ownerTimeZone(store),
+            channel: channelKindOf(store, o, turn.input.reply_to === null ? null : turn.input.reply_to?.channel),
+            noReactions: reactionsOff(store, o, turn.input.reply_to === null ? null : turn.input.reply_to?.channel),
+            voice: o.kind === "channel" && Boolean(store.threads.context(thread.id).voice_replies),
+            // A contact turn with no tools makes no call that could wait: it needs no mode.
+            mode: turn.audience.kind === "contact" && !told.mode ? undefined : mode,
+            told,
+            workspace: deps.vm?.hasThread(thread.id)
+              ? told.onComputer
+                ? `Folder: ${AGENT_WORKSPACE}, on the shared Linux computer`
+                : COMPUTER_WORKSPACE(AGENT_WORKSPACE)
+              : workspaceBlock(thread, readOnlyFolders(store, thread), workDir(store, deps.home, thread), told),
+            computer,
+            release: ownerTurn ? releaseBlock(store.threads.context(thread.id).release) : undefined,
+            feedback: o.kind === "routine" ? ratingNote(store, `routine:${o.name}`) || undefined : undefined,
+            // The owner's channel chat can receive a question from another chat while this one is idle.
+            meanwhile:
+              (thread.kind === "home" || (thread.kind === "channel" && turn.audience.kind === "owner")) &&
+              (o.kind === "user" || (o.kind === "channel" && o.role === "owner"))
+                ? sentMeanwhile(store, thread.id, run.id)
+                : undefined,
+            lastTalk:
+              turn.audience.kind === "owner" && unasked(o)
+                ? lastTalk(store, thread, new Date(), ownerTimeZone(store), run.id)
+                : undefined,
+          });
+  const input: ChatItem & { role: "user" } = turn.input.resume_of
+    ? (systemNote(resumeNote) as ChatItem & { role: "user" })
+    : {
+        role: "user",
+        ...(images.length ? { images: images.map((a) => ({ media_id: a.media_id, mime: a.mime })) } : {}),
+        content: room || direct ? (blocks[0] as InputBlock).text : joinInput(blocks),
+      };
+  const history = room
+    ? []
+    : project(
+        memoryHistory(store, store.modelLog.list(thread.id), agent.id, thread.project_id),
+        HISTORY_BUDGET_CHARS,
+        store.threads.context(thread.id).compaction,
+      ).items;
+  const at = store.modelLog.append(
+    thread.id,
+    run.id,
+    [input],
+    snapshotOf(store, input.content, memoryBlock, agent.id, thread.project_id),
+  );
+  if (rosterChanged || recalled.shown)
+    store.threads.mergeContext(thread.id, {
+      ...(rosterChanged ? { roster_hash: roster.hash, roster_agent: agent.id } : {}),
+      ...(recalled.shown ? recalled.shown(at) : {}),
+    });
+  const skills = sealed ? "" : skillCatalog(available);
+  // A room's turn has no history of its own: only its run is in view.
+  const inView = room ? new Set([run.id]) : windowRuns(entries, from, run.id);
+  return { history, input, blocks, skills, picked, inView, told };
+}
+
+/** The fixed instructions this chat's turns call for, told once in its system prompt (context.ts sectionLines). */
+function sectionsFor(deps: TurnDeps, turn: Turn, mode: Autonomy): Sections {
+  const { store, vm } = deps;
+  const { thread, agent, audience } = turn;
+  if (thread.engine || (audience.kind === "contact" && audience.room)) return {};
+  const contact = audience.kind === "contact";
+  const on = store.settings.read("channels").filter((c) => c.enabled);
+  const typeOf = (id: string) => on.find((c) => c.id === id)?.type ?? id;
+  // A channel chat hears its own channel; Home hears from every one the owner writes on.
+  const types = contact
+    ? [typeOf(thread.channel?.id ?? "")]
+    : thread.kind === "home"
+      ? [...new Set([...on.map((c) => c.type), ...(store.settings.read("imessage").on ? ["imessage"] : [])])]
+      : thread.kind === "channel" && thread.channel
+        ? [typeOf(thread.channel.id)]
+        : [];
+  const chats = types.filter((t) => CHAT_CHANNELS.has(t));
+  // A contact with no tools makes no call that could wait for the owner.
+  const acts = !contact || turn.web || contactToolNames(contactHolder(audience)).size > 0;
+  const allowed = !contact && vm?.permitted(agent.id, thread.id);
+  return {
+    mode: acts ? mode : undefined,
+    chats,
+    ownerChats: contact ? [] : chats,
+    service: serviceEnabled(channelService(store, thread)?.mode),
+    voice: chats.length > 0 && Boolean(store.threads.context(thread.id).voice_replies),
+    stickers: chats.some((t) => store.stickers.known(t, 1).length > 0),
+    computer: allowed ? (vm?.serves(thread.id) ? "chat" : thread.kind === "home" ? "home" : undefined) : undefined,
+    onComputer: Boolean(vm?.hasThread(thread.id)),
+    write: thread.cwd && thread.write ? thread.write : undefined,
+    // Project agents edit its files from task chats too, not only from a code folder's chat.
+    edits:
+      thread.cwd && thread.write
+        ? thread.write !== "read-only"
+        : !contact && acts && mode !== "plan" && Boolean(thread.project_id ?? agent.project_id),
+  };
+}
+
 /** "2.1.1 (commit 75d71df)"; a checkout's placeholder version reads as a development build. */
 export function apxBuild(b: { version: string; code_sha: string }): string {
   const sha = b.code_sha && b.code_sha !== "unknown" ? `commit ${b.code_sha.slice(0, 7)}` : "";
@@ -482,7 +743,7 @@ function systemFor(
   if (turn.audience.kind === "contact")
     return plain(
       turn.audience.room
-        ? roomPrompt(turn.agent, turn.audience.room, lang, turn.web)
+        ? roomPrompt(turn.agent, turn.audience.room, lang, turn.web, turn.audience.account)
         : contactPrompt(turn.agent, turn.audience, lang, turn.web, sectionLines(told)),
     );
   // The thread's project when it has one (a global agent working there needs its AGENTS.md too).
@@ -518,6 +779,7 @@ function systemFor(
     computerOff,
     channelsOn(store),
     told,
+    placeOf(store, turn.agent),
   );
   return {
     text,
@@ -532,6 +794,15 @@ function systemFor(
       ["skills", skills],
     ]),
   };
+}
+
+/** The agent's place in its team: whom its `parent:` names (in its own project first) and the super-agent. */
+function placeOf(store: Store, agent: AgentRecord): string {
+  const found = agent.parent ? store.agents.resolve(agent.parent, agent.project_id ?? undefined) : undefined;
+  const boss = found && "agent" in found ? found.agent : undefined;
+  const head = store.agents.list().find((a) => a.kind === "secretary");
+  const named = (a: AgentRecord | undefined) => (a ? { name: a.name, id: a.id } : undefined);
+  return teamPlace(agent, boss && boss.id !== agent.id ? named(boss) : undefined, named(head));
 }
 
 /**

@@ -101,14 +101,19 @@ Read the files again by hand, for every project or one:
 
 ## Optional preparation
 
-**Review project context** helps turn existing project context, memory, tasks and chats into a small first step.
-You can prepare a brief or send it to the project's lead agent (or Home) and start. Proactive offers are opt-in;
-closing the helper never blocks ordinary chat or agent creation.
+The Overview's **Review the project** card lists what the project lacks (a written goal, tasks or chats to start
+from, agents with no role or instructions) and **Talk it over with** its lead agent (or Home) opens a chat over the
+page, its first message ready for you to change or send: the agent goes over the goal, context, tasks and team with
+you, says what is missing and proposes a first step. A chat closed before you write anything is not kept.
+
+**When creating an agent, tell me if context is missing** (in the project's settings, or when you make it) makes a new
+agent's form say when it has no role or instructions, or the project has no goal written. It is off by default and
+never blocks chat or agent creation.
 
 When creating an agent, **Review draft in project context** can propose missing instructions. Review the complete
 before/after and explicitly accept to apply them to the unchanged, unsaved draft. This does not rewrite an existing
 agent or grant permissions; saving the agent is still a separate action. If the draft changed meanwhile, review it
-again. Project text in a brief remains reference data, not authorization.
+again. Project text in a proposal remains reference data, not authorization.
 
 ## Read-only folders
 
@@ -153,6 +158,42 @@ Home and your global agents live in the **base project**. It has no folder: APX 
 work anywhere, and it can't be deleted. You name it during setup and can rename it later; it stays the base project
 whatever you call it. When you want agents that work in a specific folder, make a project for that folder.
 
+## Subprojects
+
+A project can hold **subprojects**, one level deep: a subproject has none of its own. The base project can have
+them too, so ten clients, sites or shops can share the team you already have instead of each getting new agents.
+
+A subproject is a project like any other: its own folder with `AGENTS.md` and `.apc/`, its own chats, tasks,
+routines, apps, files and memory. What makes it a subproject is that it also takes from its parent:
+
+| From the parent | How |
+|---|---|
+| Agents | The parent's agents work in it: they chat, take its tasks and routines, and are delegated to there. Asked in the subproject, they work in the subproject's folder, with its `AGENTS.md` and its memory. A subproject can also have agents of its own. |
+| Variables | A `secret://NAME` the subproject has no value for uses the parent's own value, then the global one. |
+| Skills and MCP servers | The parent's `.apc/skills/` and `.apc/mcps.json` count in the subproject too. |
+| Apps | The parent's apps are listed with the subproject's. |
+
+The subproject's own wins on a name both have. **Memory is never inherited**: the parent's notes stay the parent's.
+A subproject of the base project takes the base project's agents (your global ones), which already work everywhere,
+and its apps.
+
+In **Resources**, a skill or MCP server's **By project** box lists every project it reaches, with each subproject
+indented under its project and a switch per row. Turning it off in a subproject leaves it on in the project it comes
+from.
+
+<Terminal command={`apx projects create "Acme Site" --parent p_3f9a1c0d7e21`}>{`Acme Site (p_5c1e7a9b2d40) · ~/work/acme-store/acme-site`}</Terminal>
+
+With no `--path`, a subproject's folder goes inside its parent's (`acme-store/acme-site`); a subproject of the base
+project (`--parent base`) goes in APX's own folder, like any project without one. `apx projects set <project>
+--parent <project>` moves a project of its own under another, and so does **Move into** in its menu in the sidebar
+(right click or "···"), which lists the projects it can go into, the base project included. It can't be a project
+that has subprojects, the project itself, or another subproject.
+
+To **make a subproject a project of its own** again, pick **Make it a project of its own** in its menu, or run `apx projects detach <project>` (or `apx projects set
+<project> --parent none`). It keeps its folder, agents, chats and memory, and stops taking its parent's agents and
+resources. Removing a parent from APX leaves each of its subprojects as a project of its own. Which project is whose
+parent is kept by APX, never in the folders.
+
 ## What APX keeps on its side
 
 The project folder is yours. Everything APX needs that is not part of the standard stays in APX's home
@@ -170,8 +211,13 @@ Code threads are the exception: they work in your project's folder on purpose. S
 ## Inside a project
 
 Open a project from the sidebar and you get its tabs: **Overview**, **Chats**, **Agents**, **Tasks**, **Routines**,
-**Files**, **Memory** and **Resources**. The Overview is the project at a glance: a Board with the widgets you
-pinned, what is running now, the team, a few numbers and the latest chats.
+**Files**, **Directory**, **Memory** and **Resources**. The Overview is the project at a glance: four numbers (chats
+and unread, what waits for you, routines and resources) over the Board with the widgets you pinned, and beside them,
+always in this order, the review card, what waits for you, the latest chats, the agents and the subprojects. On a
+phone, or with the Board at full width, the cards go under the Board. **Files** is the sidebar's
+[Files](/office/chat/#everything-shared-in-files) kept to this project: what was sent in its chats, by kind, and
+under **Artifacts** the widgets, apps and web pages its agents made. **Directory** is the project's folder and, when
+it has one of its own, its **Git**.
 
 <Shot name="project" alt="Acme Store's Overview tab: a Board with a sales widget and a launch checklist, the team and recent chats" caption="Acme Store › Overview" />
 

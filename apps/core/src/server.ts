@@ -41,17 +41,23 @@ import { type CoreConfig, OAUTH_CHATGPT } from "./config.ts";
 import { coreLogSink } from "./core-log.ts";
 import { openDb, storeSize } from "./db/db.ts";
 import { type DesktopOps, systemDesktop } from "./desktop.ts";
+import { watchAgentReviews } from "./domain/agent-review.ts";
 import { signatureFor } from "./domain/email-signature-settings.ts";
 import { cleanUpCapturedNotes } from "./domain/memory-capture-cleanup.ts";
+import { tellWaitingNotes } from "./domain/memory-notice.ts";
+import { lineage } from "./domain/projects.ts";
 import { parseRef } from "./domain/refs.ts";
 import { TERMINAL } from "./domain/runs.ts";
 import { seed } from "./domain/seed.ts";
 import { createStore } from "./domain/store.ts";
 import { announceRelease } from "./domain/whats-new.ts";
+import { createActivityReview } from "./engine/activity-review.ts";
+import { createAside } from "./engine/aside.ts";
 import { createAttention } from "./engine/attention.ts";
 import { keepAwake, sleepWatch } from "./engine/awake.ts";
 import { calendarReminders } from "./engine/calendar-reminders.ts";
 import { createEngine, type RunTimers } from "./engine/engine.ts";
+import { createGroups } from "./engine/group.ts";
 import type { InputWaits } from "./engine/inputs.ts";
 import { mailCheck } from "./engine/mail-check.ts";
 import { createMemoryIndex } from "./engine/memory-index.ts";
@@ -81,6 +87,7 @@ import { createHarnesses, type Harness } from "./harness/index.ts";
 import { readIdentity } from "./identity.ts";
 import { createIdleTrim } from "./idle-memory.ts";
 import { type IMessageOps, systemIMessage } from "./imessage.ts";
+import { markV1Notes } from "./import/v1-memory-mark.ts";
 import { createAsana } from "./integrations/asana.ts";
 import { calendarApi } from "./integrations/calendar.ts";
 import { gmailApi } from "./integrations/gmail.ts";
@@ -96,6 +103,7 @@ import { createNews } from "./news/news.ts";
 import { nodeChildEnv } from "./node-runtime.ts";
 import { createNodeBroker } from "./nodes/broker.ts";
 import { installChromeHost } from "./nodes/chrome-host.ts";
+import { openOwnersChrome } from "./nodes/chrome-launch.ts";
 import { createHeadlessBrowser } from "./nodes/headless-browser.ts";
 import { createWidgetPages } from "./nodes/widget-pages.ts";
 import { officeScheduler } from "./office-wiring.ts";
@@ -107,12 +115,14 @@ import { createPublicCredentials } from "./public-credentials.ts";
 import { nativePublicRoutes, publishedPublicRoutes } from "./public-routes.ts";
 import { createPublicTunnel, type NgrokStart } from "./public-tunnel.ts";
 import { localReleases, type ReleaseSource } from "./release-notes.ts";
+import type { OwnersChrome } from "./rpc/browser.ts";
 import { useLocalEmbedder } from "./rpc/embeddings.ts";
 import { internalCaller } from "./rpc/internal.ts";
 import { createRouter, type Dispatch } from "./rpc/router.ts";
 import { useLocalModel } from "./rpc/transcription.ts";
 import { createSecrets } from "./secrets.ts";
 import {
+  appPorts,
   builtinTools,
   coreHandlers,
   extensionStack,
@@ -169,6 +179,8 @@ export type CoreOptions = {
   channelRetryMs?: readonly number[];
   /** How long a room waits for one person's quick messages to settle (tests shorten it). */
   roomBurstMs?: number;
+  /** The clock rooms wait on: the burst and each person's pause (tests move it). */
+  roomTimers?: RunTimers;
   /** When a question waiting in the app follows the owner to their channel (tests move it). */
   followUpTimers?: RunTimers;
   /** How long a supervised contact's quick messages may keep coming before their draft (tests shorten it). */
@@ -196,7 +208,11 @@ export type CoreOptions = {
   unseenAfterMs?: number;
   /** Finder and the trash; tests record the calls instead. */
   desktop?: DesktopOps;
+  /** How a turn gets the owner's Chrome when it is closed; tests pass their own instead of starting a browser. */
+  ownersChrome?: OwnersChrome;
   desktopInstaller?: DesktopInstaller;
+  /** Where the desktop app is looked for, where its data goes and how it opens; the e2e sandbox keeps all three. */
+  desktopApp?: Pick<DesktopInstallOptions, "userHome" | "env" | "session" | "candidates" | "run">;
   /** Messages on this Mac (by default only on macOS); tests pass their own, null for none. */
   imessage?: IMessageOps | null;
   /** Runs the update's commands (git, pnpm); tests answer them. */
@@ -264,7 +280,7 @@ export async function createCore(config: CoreConfig, opts: CoreOptions = {}) {
     ? createHeadlessBrowser({
         dir: path.join(config.home, "browser"),
         chrome: typeof config.headless === "string" ? config.headless : undefined,
-        blockedPorts: () => new Set([String(listening)]),
+        blockedPorts: () => appPorts(listening, config.allowedOrigins),
         onChange: (tabs) => {
           if (!broker.withCap(BROWSER_CAP)) bus.emit({ type: "browser.tabs", tabs });
         },
@@ -437,6 +453,7 @@ export async function createCore(config: CoreConfig, opts: CoreOptions = {}) {
   });
   const { hooks, plugins, extensions } = extensionStack({ store, secrets, bus, log, home: config.home });
   const upkeep = createUpkeep({ store, llm, log });
+  const aside = createAside({ store, llm });
   const services = createServices({
     store,
     secrets,
@@ -533,11 +550,14 @@ export async function createCore(config: CoreConfig, opts: CoreOptions = {}) {
       },
     },
     outside: {
-      secret: (ref, project) => secrets.resolveIn(ref, project) !== undefined,
+      secret: (ref, project) => secrets.resolveIn(ref, lineage(store.projects, project)) !== undefined,
       allowHttp: config.flowHttpAllow,
       home: config.home,
     },
-    http: { policy: flowHttpPolicy(config.flowHttpAllow), secret: (ref, project) => secrets.resolveIn(ref, project) },
+    http: {
+      policy: flowHttpPolicy(config.flowHttpAllow),
+      secret: (ref, project) => secrets.resolveIn(ref, lineage(store.projects, project)),
+    },
     home: config.home,
     tell: (event) => bus.emit(event),
   });
@@ -565,9 +585,15 @@ export async function createCore(config: CoreConfig, opts: CoreOptions = {}) {
         emailAdapter(c, password, {
           dir: path.join(config.home, "channels", c.id),
           signature: () => signatureFor(store, "smtp", c.id, c.email?.address),
+          owner: (address) => store.persons.byAddress(c.id, address)?.role === "owner",
         }),
       whatsapp: (c) =>
-        whatsappAdapter({ dir: path.join(config.home, "channels", c.id), selfOwner: c.self_owner === true, log }),
+        whatsappAdapter({
+          dir: path.join(config.home, "channels", c.id),
+          selfOwner: c.self_owner === true,
+          rooms: (c.rooms?.rooms ?? []).map((r) => r.id),
+          log,
+        }),
       // Messages' database on this Mac: no secret; it refuses to start anywhere else.
       imessage: (c, s) => imessageAdapter(c, s, { dir: path.join(config.home, "channels", c.id) }),
       googlechat: (c, secret) => googlechatAdapter(c, secret),
@@ -586,10 +612,10 @@ export async function createCore(config: CoreConfig, opts: CoreOptions = {}) {
     attention: attention.add,
     judge: upkeep.judge,
     see: upkeep.see,
-    ownerReplied: (messageId) => memoryMaintenance.ownerReplied(messageId),
     draft: createDrafter({ store, llm, fallbackModels: upkeep.auxModels }).draft,
     ...(opts.clock ? { now: opts.clock } : {}),
     ...(opts.roomBurstMs !== undefined ? { roomBurstMs: opts.roomBurstMs } : {}),
+    ...(opts.roomTimers ? { roomTimers: opts.roomTimers } : {}),
     ...(opts.followUpTimers ? { followUpTimers: opts.followUpTimers } : {}),
     ...(opts.suggestBurstMs !== undefined ? { suggestBurstMs: opts.suggestBurstMs } : {}),
   });
@@ -637,8 +663,10 @@ export async function createCore(config: CoreConfig, opts: CoreOptions = {}) {
       scheduler.afterRun(run);
       scheduler.stalls.afterRun(run);
       afterWorkTurn(store, engine.admit, run);
+      groups.afterRun(run);
     },
   });
+  const groups = createGroups({ store, admit: engine.admit, judge: upkeep.judge, enabled: config.groupChats });
   // The Mac stays awake while APX works for the owner: a turn, a command, or a computer coming up (engine/awake.ts).
   const awake = keepAwake({
     busy: () =>
@@ -666,6 +694,15 @@ export async function createCore(config: CoreConfig, opts: CoreOptions = {}) {
     },
     (thread, stage) => bus.emit({ type: "computer.progress", thread_id: thread, stage }),
   );
+  const stopAgentReviews = watchAgentReviews(store, bus, (error) =>
+    log.warn({ err: errorMessage(error) }, "agent review scan failed"),
+  );
+  const activityReview = createActivityReview({
+    store,
+    llm,
+    models: () => upkeep.auxModels(),
+    ...(opts.clock ? { now: opts.clock } : {}),
+  });
   const scheduler = officeScheduler({
     store,
     admit: (a) => engine.admit(a),
@@ -674,6 +711,7 @@ export async function createCore(config: CoreConfig, opts: CoreOptions = {}) {
     openHeld: () => channels.openHeld((a) => engine.admit(a)),
     flowTick: (at) => flows.tick(at),
     checks: (remind) => [
+      activityReview.check,
       storage.check,
       retention.check,
       localApps.check,
@@ -685,7 +723,7 @@ export async function createCore(config: CoreConfig, opts: CoreOptions = {}) {
             // The lead can be days: enough events that a busy week is not cut short.
             (await calendarApi(google).list({ from, to, max: 250, calendar: "primary" })).events,
         },
-        remind: (texts, events) => remind(texts, `event:${events.map((e) => e.id).join(",")}`),
+        remind,
       }),
       mailCheck({
         store,
@@ -735,11 +773,13 @@ export async function createCore(config: CoreConfig, opts: CoreOptions = {}) {
       env: { ...process.env },
       feed: config.releases ?? "off",
       session: () => desktopSessionEnv(process.platform, { ...process.env }),
+      ...opts.desktopApp,
       target: () => prepareLocalTarget({ home: config.home, port: listening, home_id: identity.home_id }, config.token),
     } satisfies DesktopInstallOptions);
 
   const dispatch = createRouter(
     coreHandlers({
+      activityReview,
       vm,
       internal,
       permissions,
@@ -768,6 +808,8 @@ export async function createCore(config: CoreConfig, opts: CoreOptions = {}) {
       llmLabel: () => llm.label(),
       engine,
       upkeep,
+      aside,
+      groups,
       memory,
       memoryMaintenance,
       channels,
@@ -797,6 +839,7 @@ export async function createCore(config: CoreConfig, opts: CoreOptions = {}) {
       engines: engineIds,
       tools,
       desktop: opts.desktop ?? systemDesktop,
+      ownersChrome: opts.ownersChrome ?? { open: () => openOwnersChrome({ browsers: config.chromeHost }) },
       desktopInstaller,
       native: config.native,
       runtimeHomes: config.runtimeSkills.homes,
@@ -825,6 +868,9 @@ export async function createCore(config: CoreConfig, opts: CoreOptions = {}) {
   routed = dispatch;
   const cleanup = cleanUpCapturedNotes(store);
   if (cleanup) log.info(cleanup, "captured memory cleanup: retired noisy automatic notes");
+  const v1Marked = markV1Notes(store, config.v1.home);
+  if (v1Marked?.marked) log.info(v1Marked, "memory: marked the notes brought over from APX v1");
+  tellWaitingNotes(store);
   memoryMaintenance.start();
 
   const transport = await listen(config, { dispatch, store, log, identity, broker, bus, vm });
@@ -895,6 +941,7 @@ export async function createCore(config: CoreConfig, opts: CoreOptions = {}) {
     telemetry,
     computer: vm,
     async close() {
+      stopAgentReviews();
       awake.close();
       sleep?.close();
       clearInterval(awakeTick);
@@ -911,6 +958,7 @@ export async function createCore(config: CoreConfig, opts: CoreOptions = {}) {
       await widgetPages?.closeAll().catch(() => {});
       headless?.close();
       scheduler.stop();
+      await activityReview.close();
       stopFlowEvents();
       await flows.close();
       await news.stop();
@@ -921,6 +969,7 @@ export async function createCore(config: CoreConfig, opts: CoreOptions = {}) {
       webhooks.close();
       await hookListener.close();
       await engine.stop();
+      aside.stop();
       await upkeep.stop();
       await memoryMaintenance.stop();
       await memory.stop();

@@ -38,6 +38,40 @@ Un repositorio puede nombrar cualquier comando, así que **un servidor de proyec
 esa definición exacta**. Si el archivo cambia, hay que aprobarlo de nuevo. `.apc/mcps.json` nunca guarda tokens: una
 definición que menciona `secret://` ahí se ignora.
 
+### Servidores privados para un proyecto (versión de desarrollo)
+
+Podés limitar un servidor tuyo a un proyecto y mantener su configuración privada en APX, fuera del repositorio.
+Puede usar las variables de ese proyecto. Los permisos se conservan para la misma configuración y cuenta; si el
+proyecto usa otra cuenta, las tools vuelven a pedir permiso:
+
+```bash
+apx mcps scope github acme-store           # solo este proyecto
+apx mcps scope github global               # disponible en todos otra vez
+```
+
+En el editor, **Vive en** ofrece **Global** o un proyecto por nombre: un servidor que vive en un proyecto aparece
+entre los propios de ese proyecto y solo lo usan sus agentes. Para uno global, **Disponible en** elige los proyectos
+donde está prendido (**Todos los proyectos** o algunos); los mismos switches están en **Por proyecto** en su detalle, y
+la lista dice **En 2 de 3** en vez de **Global** mientras esté apagado en alguno. Guardar aplica los dos; Cancelar los
+deja como estaban. Las conexiones del repositorio siguen perteneciendo a su repositorio y no ofrecen estos controles.
+
+Antes de hacerlo global, comprobá que sus variables existan donde lo vas a usar. Las variables del proyecto no se
+copian al almacenamiento global. El editor indica qué variables necesitan un valor en el ámbito elegido; podés
+guardar la conexión mientras preparás esos valores. Esto no mueve una definición del archivo `.apc/mcps.json` del repositorio.
+
+### Variables y enlaces desde el chat (versión de desarrollo)
+
+**Usar una variable**, junto a un valor de entorno o header, abre una lista con búsqueda. También podés apretar
+**Ctrl+Espacio** dentro del valor, usar las flechas y confirmar con Enter. Elegir un nombre inserta una ficha en el
+cursor y conserva textos como `Bearer `; podés seguir escribiendo después de la ficha, o antes. La lista usa las variables efectivas del proyecto elegido: su valor propio
+gana al del proyecto padre o al global, y cada nombre aparece una sola vez. **Crear nueva variable…** guarda el valor
+en ese mismo ámbito antes de insertar su referencia. El selector no muestra valores.
+
+Un enlace como `[Acme](apx:resources/mcp/acme/global)` abre el editor de una conexión privada sobre el chat, aunque
+esté limitada a un proyecto. Para una conexión del repositorio usá `apx:resources/mcp/acme/PROJECT_ID`. Sin el último
+segmento, un nombre repetido te pregunta qué conexión querés. Si falta el destino exacto, nunca se abre otra conexión
+con el mismo nombre. Cerrar o guardar te devuelve a la misma conversación.
+
 ## Agregar, aprobar, quitar
 
 <Tabs>
@@ -96,9 +130,15 @@ Sumá `--project <id>` para un servidor de proyecto, y `--scope global|project` 
 Cada servidor tiene **Permisos de tools**:
 
 - **Preguntar**: cada agente te pide permiso antes de usar una tool que cambia algo.
-- **Todas permitidas**: ningún agente pide permiso para estas tools. Si el servidor o una tool cambian, se vuelve a
-  preguntar.
-- **Algunas**: tocá una tool para permitirla (verde) o para que vuelva a preguntar.
+- **Todas permitidas**: ningún agente pide permiso para sus tools, tampoco para las que el servidor agregue después.
+  Si cambia la definición del servidor, se vuelve a preguntar.
+- **Algunas**: tocá una tool para permitirla (verde) o para que vuelva a preguntar. Las tools que el servidor agregue
+  después preguntan primero, aunque hayas elegido todas; sacar una tool de **Todas permitidas** la pasa a **Algunas**.
+
+La lista muestra las tools y los permisos de cada servidor como estaban la última vez que corrió, sin tener que
+abrirlo. Pasá el mouse sobre su punto para ver qué significa: lleno, corriendo ahora; anillo, listo (arranca cuando un
+agente lo usa); ámbar, te necesita (aprobalo o iniciá sesión); rojo, no arrancó. Tocá una de sus variables para
+abrirla en **Variables**.
 
 Encima de eso siguen valiendo la autonomía de cada agente y su lista `tools:`, y lo que aprobaste "siempre" para un
 agente o un chat aparece en **Permitidas para un agente o un chat**. Mirá [Autonomía](/es/concepts/autonomy/).

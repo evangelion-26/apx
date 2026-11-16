@@ -23,8 +23,6 @@ type To = { channel: string; conversation: string };
 
 /** Turns that answer someone in a chat (not a routine, a delegation or a job's result). */
 const CONVERSATION = new Set(["user", "channel", "hours_began"]);
-/** Unasked turns told to answer SKIP when there is nothing for the owner (context.ts frames them). */
-const MAY_SKIP = new Set(["mail", "routine"]);
 
 export function createSignals(deps: {
   store: Store;
@@ -61,7 +59,8 @@ export function createSignals(deps: {
     const origin = run.input?.origin;
     if (run.state !== "completed") return false;
     const chat = CONVERSATION.has(origin?.kind ?? "") || answersChecked(origin);
-    if (!chat && !(MAY_SKIP.has(origin?.kind ?? "") && isSkip(out))) return false;
+    // SKIP is never words, whatever started the turn (a delegated result's turn answers it too).
+    if (!chat && !isSkip(out)) return false;
     if (isSkip(out)) {
       // In the app alone the words never show (the panel hides them); a channel's chat drops them.
       if (to) hideWords(run.message_id);
@@ -76,6 +75,12 @@ export function createSignals(deps: {
     }
     const emoji = reactAnswer(out);
     if (!emoji) return false;
+    // Reactions off on this channel: an emoji answer goes out as nothing, like SKIP.
+    if (to && store.settings.read("channels").find((c) => c.id === to.channel)?.reactions === false) {
+      hideWords(run.message_id);
+      showLast(run);
+      return true;
+    }
     // The owner wrote in the app to their own chat: the message it answers is only here, none on the platform.
     const ownChat = to && store.persons.byAddress(to.channel, to.conversation)?.id === OWNER_ID;
     if (to && !(ownChat && run.input?.origin.kind === "user")) await reactInstead(run, to, emoji);
@@ -112,6 +117,7 @@ export function createSignals(deps: {
       return;
     }
     // Words instead would be a stray emoji in their chat: nothing goes, and the owner hears why.
+    showLast(run);
     const where = store.threads.get(run.thread_id)?.title ?? to.channel;
     const texts = channelTexts(store);
     const text = refused ? texts.reactRefused(emoji, where, refused) : texts.reactFailed(emoji, where);

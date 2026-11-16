@@ -134,9 +134,16 @@ test("asked in the app for their Chrome, the agent opens and reads a tab there; 
     // Not a Chrome turn: the words carry no Chrome mark, only the tab does.
     assert.equal(messages.find((m) => m.author.kind === "user")?.via, undefined);
 
-    // A routine's turn (not the owner's words) never sees or reaches their Chrome, even naming one of its tabs.
+    // A routine the owner scheduled runs their words: it reaches their Chrome as their own turn does (DECISIONS.md#d-223).
     calls.length = 0;
-    const run = env.core.engine.admit({
+    const lastSaid = (runId: string) => {
+      const part = env.core.store.messages
+        .list(thread, 40)
+        .findLast((m) => m.run_id === runId)
+        ?.parts.find((p) => p.type === "text");
+      return part && "text" in part ? part.text : "";
+    };
+    const routine = env.core.engine.admit({
       thread_id: thread,
       agent_id: "superagent",
       trigger: "routine",
@@ -144,28 +151,32 @@ test("asked in the app for their Chrome, the agent opens and reads a tab there; 
       text: "touch tab c1",
     });
     await env.settle(thread, 15_000);
-    const said = env.core.store.messages
-      .list(thread, 20)
-      .findLast((m) => m.run_id === run.id)
-      ?.parts.find((p) => p.type === "text");
-    assert.match(said && "text" in said ? said.text : "", /unknown tab c1/);
+    assert.match(lastSaid(routine.id), /chrome text/);
+    assert.deepEqual(
+      calls.filter((c) => c.method === "browser.text").map((c) => c.node),
+      ["chrome"],
+    );
+    // Another agent's request is not the owner's work: it never sees or reaches their Chrome, even naming a tab.
+    calls.length = 0;
+    const run = env.core.engine.admit({
+      thread_id: thread,
+      agent_id: "superagent",
+      trigger: "a2a",
+      origin: { kind: "agent", id: "scout", name: "Scout", thread_id: thread, run_id: "run_scout" },
+      text: "touch tab c1",
+    });
+    await env.settle(thread, 15_000);
+    assert.match(lastSaid(run.id), /unknown tab c1/);
     // Asking for a new tab there is refused by the core itself.
     const asked = env.core.engine.admit({
       thread_id: thread,
       agent_id: "superagent",
-      trigger: "routine",
-      origin: { kind: "routine", id: "rt_acme", name: "Acme check" },
+      trigger: "a2a",
+      origin: { kind: "agent", id: "scout", name: "Scout", thread_id: thread, run_id: "run_scout" },
       text: "check the late orders in my Chrome",
     });
     await env.settle(thread, 15_000);
-    const refused = env.core.store.messages
-      .list(thread, 30)
-      .findLast((m) => m.run_id === asked.id)
-      ?.parts.find((p) => p.type === "text");
-    assert.match(
-      refused && "text" in refused ? refused.text : "",
-      /only a turn the owner asked for may use their Chrome/,
-    );
+    assert.match(lastSaid(asked.id), /only the owner's own work \(their turn, routine or task\) may use their Chrome/);
     assert.equal(calls.filter((c) => c.node === "chrome").length, 0);
   } finally {
     chrome.close();
@@ -173,10 +184,26 @@ test("asked in the app for their Chrome, the agent opens and reads a tab there; 
   }
 });
 
+test("typing limited to this computer never reaches the owner's Chrome, which cannot check the page itself", async () => {
+  const chrome = await new ApxClient({ url: env.core.url }).connect("node", ["chrome"]);
+  fakeNode(chrome, "chrome", "c");
+  try {
+    calls.length = 0;
+    // Only APX's own browser checks the page as it types (DECISIONS.md#d-212).
+    await assert.rejects(
+      env.client.call("browser.type", { tab: "c1", ref: "e1", text: "Buy milk", local_only: true }),
+      /owner's Chrome: typing there waits for the owner/,
+    );
+    assert.equal(calls.filter((c) => c.method === "browser.type").length, 0);
+  } finally {
+    chrome.close();
+  }
+});
+
 test("with Chrome not connected, the agent is told so instead of using another browser", async () => {
   await waitFor(() => (env.core.broker.withCap("chrome") ? undefined : true), "Chrome gone", { ms: 5000 });
   calls.length = 0;
-  assert.match(await turn(await chat(), "chrome"), /Chrome is not connected/);
+  assert.match(await turn(await chat(), "chrome"), /Chrome is closed and APX could not open it/);
   assert.equal(calls.filter((c) => c.method === "browser.open").length, 0);
 });
 

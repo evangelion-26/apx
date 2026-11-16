@@ -14,8 +14,11 @@ const SCOPE = z
 
 const MEMORY_BLOCK_CHARS = 2400;
 
+const by = (m: Memory) =>
+  m.source === "owner" ? ", by the owner" : m.source === "imported" ? ", from APX v1, may be outdated" : "";
+
 const line = (m: Memory) =>
-  `- [${m.id}] (${m.scope}${m.source === "owner" ? ", by the owner" : m.pending ? ", not confirmed by the owner" : ""}; updated ${m.updated_at}) ${m.text.replace(/\s+/g, " ")}`;
+  `- [${m.id}] (${m.scope}${by(m) || (m.pending ? ", not confirmed by the owner" : "")}; updated ${m.updated_at}) ${m.text.replace(/\s+/g, " ")}`;
 
 /**
  * Notes as the model reads them, capped. A note saved while outside content was in the turn is wrapped as untrusted,
@@ -24,7 +27,7 @@ const line = (m: Memory) =>
 /** One line per note for the index: what it is about, not all it says (recall brings the rest). */
 export function hookLine(m: Memory): string {
   const first = m.text.split("\n")[0] ?? "";
-  const head = `- [${m.id}] (${m.kind ?? "note"}${m.source === "owner" ? ", by the owner" : ""}, ${m.updated_at.slice(0, 10)}) `;
+  const head = `- [${m.id}] (${m.kind ?? "note"}${by(m)}, ${m.updated_at.slice(0, 10)}) `;
   const hook = (m.kind === "procedure" ? procedureHook(m.text) : undefined) ?? first.replace(/\s+/g, " ").trim();
   return `${head}${hook.length > 96 ? `${hook.slice(0, 95)}…` : hook}`;
 }
@@ -103,14 +106,25 @@ export function memoryTools(store: Store): Tool[] {
     defineTool({
       name: "recall",
       description:
-        "Search your notes and the owner's (global, this project, your own) by words. Notes relevant to each message already appear in its [memory] block; use this to look for something specific.",
-      args: z.object({ query: z.string().trim().min(2).max(300), limit: z.number().int().min(1).max(20).optional() }),
+        "Find notes by words; with no query, the newest (offset pages on). Each message's [memory] block already has the relevant ones.",
+      args: z.object({
+        query: z.string().trim().min(2).max(300).optional(),
+        limit: z.number().int().min(1).max(20).optional(),
+        offset: z.number().int().optional(),
+      }),
       effect: "none",
       deadlineMs: 5_000,
-      title: (a) => `Searched memory for "${String(a.query ?? "").slice(0, 60)}"`,
+      title: (a) =>
+        a.query ? `Searched memory for "${String(a.query).slice(0, 60)}"` : "Listed the newest memory notes",
       async run(a, ctx) {
-        const { memories } = await ctx.call("memory.list", { query: a.query, limit: a.limit ?? 8 });
-        return notesText(memories, 8000).text ?? "no notes match.";
+        const limit = a.limit ?? 8;
+        const offset = Math.min(Math.max(a.offset ?? 0, 0), 500 - limit);
+        const { memories } = await ctx.call("memory.list", {
+          ...(a.query ? { query: a.query } : {}),
+          limit: offset + limit,
+        });
+        const page = memories.slice(offset);
+        return notesText(page, 8000).text ?? (offset ? "no more notes." : "no notes match.");
       },
     }),
     defineTool({

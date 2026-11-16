@@ -5,7 +5,7 @@ import path from "node:path";
 import { after, before, test } from "node:test";
 import { UPLOAD_LIMITS } from "@apx/protocol";
 import { say, scriptedLlm, startCore } from "../engine/testkit.ts";
-import { removeDir, waitFor } from "../testkit/platform.ts";
+import { removeDir, tempDir, waitFor } from "../testkit/platform.ts";
 import { fakeWhatsApp } from "./fake-whatsapp.test-support.ts";
 import type { AdapterIO } from "./types.ts";
 import { toWhatsApp, whatsappAdapter } from "./whatsapp.ts";
@@ -60,6 +60,7 @@ test("linking the owner's own phone: a QR waits in the app, and once scanned the
   const linked = await channel();
   assert.equal(linked?.qr, undefined, "the QR is gone once spent");
   assert.equal(linked?.account, "+5491100000001");
+  assert.equal(linked?.account_name, "Acme line", "the profile name says whose WhatsApp it is");
   const { persons } = await env.client.call("contacts.list", {});
   assert.ok(persons.find((p) => p.role === "owner")?.addresses.some((a) => a.external_id === wa.owner));
   // POSIX modes only: Windows reports fixed bits that say nothing about who may read the folder.
@@ -336,6 +337,34 @@ test("someone under their private id is the same person as their number", async 
   assert.equal(req?.external_id, BOB.phone);
 });
 
+test("adapter: a reply under the private id alone is still the number this line already learned", async () => {
+  const fake = fakeWhatsApp();
+  const tmp = tempDir("apx-wa-");
+  const dir = tmp.path;
+  const adapter = whatsappAdapter({ dir, lib: async () => fake.lib });
+  const from: string[] = [];
+  const ac = new AbortController();
+  let linked = false;
+  await adapter.start({
+    receive: (m) => from.push(m.sender.id),
+    action: () => {},
+    status: () => {},
+    identified: () => {
+      linked = true;
+    },
+    qr: (code) => code && fake.scan(),
+    signal: ac.signal,
+  });
+  await waitFor(() => linked, "linked");
+  const CARL = { phone: "5491100000004@s.whatsapp.net", name: "Carl", lid: "200000000000004@lid" };
+  fake.message(CARL, "hello");
+  fake.message(CARL, "it's me again", { noAlt: true });
+  await waitFor(() => from.length === 2, "both messages");
+  assert.deepEqual(from, [CARL.phone, CARL.phone], "one person, never a second under the private id");
+  await adapter.stop();
+  await tmp.remove();
+});
+
 test("a contact's sticker is kept as WhatsApp's, and the agent answers with it as a sticker", async () => {
   // A 1×1 WebP, the file a WhatsApp sticker is.
   const WEBP = Buffer.from("UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==", "base64");
@@ -407,7 +436,7 @@ test("a contact's video, a document of any type and a too-big file: kept to play
   );
 });
 
-test("groups, and the owner writing to a friend on their phone, never reach the agent", async () => {
+test("an unlisted group, and the owner writing to a friend on their phone, never reach the agent", async () => {
   const calls = llm.calls.length;
   wa.message(ANA, "group news", { group: "120363000000000001@g.us" });
   wa.ownerTo(ANA, "see you tonight");

@@ -6,6 +6,8 @@ import { waitFor } from "../testkit/platform.ts";
 import { callTool, say, scriptedLlm, startCore } from "./testkit.ts";
 
 let releaseScout: (() => void) | undefined;
+/** Read through a call, so a reset in one test does not narrow it for the checks after it. */
+const held = () => releaseScout;
 
 const taskId = (text: string) => /task_[0-9a-f]+/.exec(text)?.[0] ?? "";
 
@@ -32,6 +34,25 @@ const llm = scriptedLlm(async (req, { system, said, afterTool }) => {
     return callTool("c3", "task_comment", { task: id, text: "@scout keep the animation first" });
   if (system.includes("main secretary") && said.includes("Scout answered your question"))
     return say("Go on with that, Scout.");
+  if (system.includes("main secretary") && said.includes("Push Vera on") && !afterTool)
+    return callTool("c7", "task_comment", {
+      task: env.core.store.tasks.list({ limit: 50 }).find((t) => t.title === "Ledger summary")?.id,
+      text: "@vera go on with the summary, nothing waits on the owner.",
+    });
+  if (system.startsWith("You are Vera") && said.includes("Ship the review flow")) {
+    const review = env.core.store.tasks.list({ limit: 50 }).find((t) => t.title === "Review flow")?.id;
+    const last = req.messages.at(-1);
+    if (!afterTool) return callTool("rv1", "task_comment", { task: review, text: "@scout hold the answer: review it" });
+    if (last?.role === "tool" && last.tool_call_id === "rv1")
+      return callTool("rv2", "task_update", { task: review, status: "review", reviewer: "scout" });
+    return say("Sent for review.");
+  }
+  if (system.startsWith("You are Vera") && JSON.stringify(req.messages).includes("Review flow")) return say("ok");
+  if (system.includes("main secretary") && said.includes("Wake Vera") && !afterTool)
+    return callTool("c8", "task_update", {
+      task: env.core.store.tasks.list({ limit: 50 }).find((t) => t.title === "Idle summary")?.id,
+      assignee: "vera",
+    });
   if (system.startsWith("You are Scout") && said.includes("make it a task") && !afterTool)
     return callTool("c4", "task_create", {
       goal: "Done as asked",
@@ -84,6 +105,13 @@ test("an agent's @mention on its task asks that teammate, and the answer comes b
     .find((m) => JSON.stringify(m.parts).includes("Scout answered your question"));
   assert.deepEqual(heard?.author, { kind: "agent", id: "scout" });
   assert.match(JSON.stringify(heard?.parts), /include taxes/);
+  // The answer reaches Vera as work on her own task: go on until it is delivered, never a one-off report to Scout.
+  const input = llm.calls
+    .filter((c) => String(c.messages[0]?.content).startsWith("You are Vera"))
+    .map((c) => String(c.messages.at(-1)?.content))
+    .find((m) => m.includes("Scout answered your question"));
+  assert.match(input ?? "", /The task is yours: keep working until it is done/);
+  assert.doesNotMatch(input ?? "", /Status: done|goes back to Scout/);
   // Scout's own @vera from inside the consult asked no one: still the one consult, and Vera's chat had two turns.
   assert.equal(store.threads.sessions(task.thread_id).length, 1);
   // Parts APX goes on with on its own (engine/task-continue.ts) are not turns anyone asked for.
@@ -92,6 +120,27 @@ test("an agent's @mention on its task asks that teammate, and the answer comes b
     .flatMap((m) => m.parts)
     .find((p) => p.type === "subthread");
   assert.equal(card?.type === "subthread" && card.asked_by, "vera");
+  // Vera's chat shows the consult where she asked, as one card the answer fills in: her question, Scout's answer.
+  const mine = (await env.client.call("threads.get", { thread: chat()?.id ?? "" })).messages
+    .flatMap((m) => m.parts)
+    .filter((p) => p.type === "subthread");
+  assert.equal(mine.length, 1);
+  const shown = mine[0];
+  assert.ok(shown?.type === "subthread");
+  assert.equal(shown.thread_id, consult?.id);
+  assert.equal(shown.state, "completed");
+  assert.match(shown.title, /include taxes/);
+  assert.match(shown.summary ?? "", /totals include taxes/);
+  // Both took part in the task: its agent first.
+  assert.deepEqual((await env.client.call("tasks.get", { task: task.id })).task.agents, ["vera", "scout"]);
+  // Her chat's agents list the consult as hers, though it hangs under the task's conversation.
+  const called = await env.client.call("threads.list", { root_thread: chat()?.id ?? "", include_subthreads: true });
+  assert.deepEqual(called.asked, [consult?.id]);
+  assert.ok(called.threads.some((t) => t.id === consult?.id));
+  // The turn Scout's answer started names his conversation, where it opens from.
+  const { running, finished } = await env.client.call("jobs.list", { finished: 50 });
+  const answered = [...running, ...finished].find((j) => j.thread_id === chat()?.id && j.from?.kind === "agent");
+  assert.equal(answered?.from?.thread, consult?.id);
 });
 
 test("the answer to a question asked from the owner's chat goes to the asker's chat for the task, not the owner's", async () => {
@@ -108,6 +157,7 @@ test("the answer to a question asked from the owner's chat goes to the asker's c
   // The owner's chat (mirrored to their channels) holds only their words and the answer to them.
   const home = store.messages.list("home", 50).map((m) => JSON.stringify(m.parts));
   assert.ok(!home.some((t) => t.includes("Scout answered your question")), "no teammate's answer in the owner's chat");
+  assert.ok(!home.some((t) => t.includes('"subthread"')), "no consult card in the owner's chat either");
   assert.ok(!home.some((t) => t.includes("Go on with that, Scout")), "no words for the teammate in the owner's chat");
   assert.ok(
     store.runs.list("home").every((r) => r.trigger !== "a2a"),
@@ -201,4 +251,70 @@ test("a consult still working is left alone: a new @mention opens another, and a
   await env.client.call("tasks.comment", { task: vera.id, text: "@scout and the owner's question" });
   await waitFor(() => consultsOf(vera.thread_id).length === 2, "the owner's ask opens its own consult");
   assert.equal(store.runs.list(byVera?.id ?? "").length, 1, "Vera's consult was not reused for the owner");
+});
+
+test("a teammate's @mention of the task's own agent reaches its chat for the task as work, not a consult", async () => {
+  const store = env.core.store;
+  const task = await env.client.call("tasks.create", {
+    title: "Ledger summary",
+    description: "Draft the ledger summary.",
+    assignee: "vera",
+  });
+  const chat = () => store.threads.byTask(task.id).find((t) => t.agent_ids[0] === "vera");
+  await waitFor(() => Boolean(chat()), "vera's chat for the task");
+  await env.settle(chat()?.id ?? "");
+  await env.client.call("threads.send", { thread: "home", text: "Push Vera on the ledger." });
+  await env.settle("home");
+  await waitFor(
+    () => store.runs.list(chat()?.id ?? "").some((r) => r.input?.origin.kind === "agent" && r.state === "completed"),
+    "vera hears it in her chat for the task",
+  );
+  assert.equal(store.threads.sessions(task.thread_id).filter((t) => t.agent_ids[0] === "vera").length, 0, "no consult");
+  const run = store.runs.list(chat()?.id ?? "").find((r) => r.input?.origin.kind === "agent");
+  assert.deepEqual(run?.input?.origin.kind === "agent" && run.input.origin.on_task, task.id);
+  const input = llm.calls
+    .filter((c) => String(c.messages[0]?.content).startsWith("You are Vera"))
+    .map((c) => String(c.messages.at(-1)?.content))
+    .find((m) => m.includes("go on with the summary"));
+  assert.match(input ?? "", /The task is yours: keep working until it is done/);
+  assert.doesNotMatch(input ?? "", /the task's work is not yours|Status: done/);
+});
+
+test("naming the task's own agent again while it is idle has it go on; the task does not just sit", async () => {
+  const store = env.core.store;
+  const task = await env.client.call("tasks.create", {
+    title: "Idle summary",
+    description: "Draft the idle summary.",
+    assignee: "vera",
+  });
+  const chat = () => store.threads.byTask(task.id).find((t) => t.agent_ids[0] === "vera");
+  await waitFor(() => Boolean(chat()), "vera's chat for the task");
+  await env.settle(chat()?.id ?? "");
+  const woken = () =>
+    store.runs.list(chat()?.id ?? "").filter((r) => r.input?.origin.kind === "agent" && r.input.origin.on_task);
+  assert.equal(woken().length, 0);
+  await env.client.call("threads.send", { thread: "home", text: "Wake Vera on her summary." });
+  await env.settle("home");
+  await waitFor(() => woken().length === 1, "vera goes on, as work on her own task");
+});
+
+test("an agent that asks its reviewer and then puts the task in review gets one review, not two at once", async () => {
+  const store = env.core.store;
+  releaseScout = undefined;
+  const task = await env.client.call("tasks.create", {
+    title: "Review flow",
+    description: "Ship the review flow.",
+    assignee: "vera",
+  });
+  const scouts = () => store.threads.sessions(task.thread_id).filter((t) => t.agent_ids[0] === "scout");
+  try {
+    await waitFor(() => store.tasks.get(task.id)?.status === "review", "vera puts it in review");
+    assert.equal(scouts().length, 1, "the consult she opened is the review");
+    assert.equal(store.threads.context(scouts()[0]?.id ?? "").consult?.review, true);
+    await waitFor(() => Boolean(held()), "scout is held at work");
+  } finally {
+    held()?.();
+  }
+  await env.settle(scouts()[0]?.id ?? "");
+  assert.equal(scouts().length, 1);
 });

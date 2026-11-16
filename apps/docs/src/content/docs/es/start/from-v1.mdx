@@ -95,7 +95,7 @@ lado**, así que podés quedarte con la de v1 hasta que termines. Emparejá la n
 | En v1 | En v2 |
 | --- | --- |
 | Ledgers por canal y día, archivos de sesión, archivos de conversación, archivos de sesiones de código | **Hilos.** Un solo lugar donde vive una conversación, con sus corridas (turnos de agente) y pasos (llamadas a herramientas), todo en una base de datos |
-| El super-agente y sus logs diarios por canal | **Home**, tu secretaria. Su chat es una sola conversación en todos lados; el asistente de configuración todavía le dice super-agente |
+| El super-agente y sus logs diarios por canal | **Home**, tu secretaria, es el chat principal de la app. Cada cuenta de canal conectada conserva una conversación separada en su chat propio; el asistente de configuración todavía le dice super-agente |
 | El proyecto Default | El **proyecto base**: sin carpeta propia, donde viven Home y tus agentes globales. Se sigue llamando Default si no le cambiás el nombre |
 | Engines (proveedores de LLM) | **Proveedores**, que aparecen como motores en Config › Motores y modelos. Los modelos se nombran `motor/modelo` y un router elige uno en cada turno |
 | Runtimes (`apx run` con Claude Code, Codex, OpenCode…) | **Harnesses**. Las CLIs de código corren solo en sus propias sesiones: hilos de código (`apx chat --code`) y **Sesiones externas** |

@@ -18,6 +18,7 @@ export function unasked(origin: Origin): boolean {
     case "job":
     case "computer_ready":
     case "stalled_task":
+    case "task_feedback":
     case "task_result":
     case "delegation_result":
     case "delegation_results":
@@ -30,6 +31,7 @@ export function unasked(origin: Origin): boolean {
     case "agent":
     case "surface":
     case "terminal":
+    case "connected":
     case "go_on":
     case "task_continue":
       return false;

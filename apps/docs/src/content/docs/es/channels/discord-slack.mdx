@@ -23,7 +23,7 @@ outbox guarda cada respuesta. Discord además puede atender salas de tu servidor
 
 3. En **Installation**, agregá el bot a tu cuenta (o a un servidor donde estés) para poder escribirle.
 
-4. En APX, abrí **Configuración › Canales**, **Agregar canal › Discord**. Pegá el token en **Token del bot**, elegí
+4. En APX, abrí **Canales › Nuevo canal › Discord**. Pegá el token en **Token del bot**, elegí
    **Quién responde** y tocá **Conectar bot**.
 
 5. Escribile al bot por mensaje directo. Te contesta con un código: ponelo en **Este es mi Discord** y tocá
@@ -31,7 +31,7 @@ outbox guarda cada respuesta. Discord además puede atender salas de tu servidor
 
 </Steps>
 
-Tus mensajes directos van a Home, como en todos los canales. Las demás personas que le escriben directo al bot son
+Tus mensajes directos van al chat propio de esta cuenta. Las demás personas que le escriben directo al bot son
 desconocidos y siguen la opción **Desconocidos** del canal.
 
 ### Salas del servidor
@@ -59,7 +59,9 @@ El resto de la sección define cómo se porta ahí:
 
 - **Cómo lo llaman**: palabras extra que cuentan como llamarlo, además de @mencionarlo o responderle. Separadas por
   coma.
-- **Solo te contesta a vos**: lee a todos pero solo te responde a vos.
+- **Solo te contesta a vos en las salas**: ahí lee a todos pero solo te responde a vos; por privado responde como
+  siempre. Con **Solo te contesta a vos** activado para toda la cuenta (en **Comportamiento**) ya es así, y este
+  interruptor no aparece.
 - **Lo que sabe y puede responder**: tus notas para esa comunidad (qué es el proyecto, dónde está la documentación).
   Son públicas.
 - **Reglas**: lo que nunca debe decir o hacer ahí. Van al final y ganan sobre todo lo demás.
@@ -74,6 +76,15 @@ mensajes de la sala como datos y le responde al mensaje que contesta. Solo en un
 las personas de la sala que nombra; nadie más puede hacer que mencione a alguien. Si una respuesta falla, te avisa a
 vos; no se publica nada.
 </Aside>
+
+### Pedir algo desde una sala
+
+Cuando en una sala pedís algo que necesita más que una respuesta (buscar algo en tus archivos, crear una tarea, mandar
+un mensaje, cambiar un proyecto), el agente avisa en la sala que ya va y APX pasa tu mensaje, tal como lo escribiste (con los que mandaste justo antes), a
+**chat privado** de esa cuenta. El resultado te llega por privado en la misma cuenta, nunca en la sala. Solo se pasan
+tus propios mensajes, reconocidos por tu cuenta; lo que escribe otra gente de la sala nunca se vuelve un pedido. En
+Discord y Slack tu super-agente primero confirma que sos vos, como con tus otros mensajes ahí; en un grupo de Telegram
+arranca enseguida. En los dos casos tu mensaje queda en el chat de la sala, sin una segunda copia en el chat privado.
 
 Cada mensaje de una sala de la lista queda en el chat de esa sala en APX. Los agentes pueden leer una sala (por
 ejemplo, "¿qué dijeron hoy en #general?") y publicar en una por su nombre exacto; un nombre parecido solo recibe una
@@ -98,7 +109,7 @@ A tus agentes solo les llegan los mensajes directos a la app; los canales del es
 
 3. En **App Home**, permití mensajes en la pestaña **Messages**. Instalá la app y copiá el token del bot (`xoxb-…`).
 
-4. En APX, abrí **Configuración › Canales**, **Agregar canal › Slack**. Pegá los dos tokens (**Token del bot** y
+4. En APX, abrí **Canales › Nuevo canal › Slack**. Pegá los dos tokens (**Token del bot** y
    **Token de la app**), elegí **Quién responde** y tocá **Conectar bot**.
 
 5. Escribile a la app y poné su código en **Este es mi Slack**.
