@@ -60,10 +60,10 @@ test("the owner links a line with the QR, then their own phone by writing to it"
   await until(async () =>
     (await world.whatsapp.sentTo(ME.phone)).some((t) => t.includes("Got it: Remind me to call the bank")),
   );
-  // Both channels write into Home, and each message shows where it came from.
+  // Each owner account keeps its own chat: WhatsApp shows its exchange, not Telegram's earlier one.
   const chat = page.getByRole("main");
   await expect(chat.getByText("Got it: Remind me to call the bank").first()).toBeVisible();
-  await expect(chat.getByText("Remind me to stretch").first()).toBeVisible();
+  await expect(chat.getByText("Remind me to stretch")).toHaveCount(0);
 });
 
 test("strangers 'ask me': whoever writes is an unreviewed contact, the owner hears who and what; unsilenced, they get answers", async ({
@@ -85,12 +85,14 @@ test("strangers 'ask me': whoever writes is an unreviewed contact, the owner hea
   );
 
   await world.whatsapp.message(FRIEND, "hola, ¿vamos el sábado?");
-  // The owner linked Telegram earlier in this sandbox: their notices go there, with the buttons to decide.
-  const notice = await until(async () =>
-    (await world.sentTo(TELEGRAM_OWNER)).find((m) => m.text?.includes("+5491100000009")),
+  // The notice goes through an eligible owner account; which one carries it is a preference, not this flow's contract.
+  const notice = await until(
+    async () =>
+      (await world.sentTo(TELEGRAM_OWNER)).find((m) => m.text?.includes("+5491100000009"))?.text ??
+      (await world.whatsapp.sentTo(ME.phone)).find((text) => text.includes("+5491100000009")),
   );
-  expect(notice.text).toContain("Lucía");
-  expect(notice.text).toContain("¿vamos el sábado?");
+  expect(notice).toContain("Lucía");
+  expect(notice).toContain("¿vamos el sábado?");
   expect(await world.whatsapp.sentTo(FRIEND.phone)).toEqual([]);
 
   // In the panel they are a contact not reviewed yet: their message is in their chat, unanswered.
