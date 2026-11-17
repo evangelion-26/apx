@@ -9,8 +9,7 @@ const signature = (s: Step) => `${s.tool}:${JSON.stringify(s.args)}`;
 
 /**
  * Why the part in `steps` made no progress after the part before it (`before`), or undefined when it did: it got
- * something done with an effect, mostly worked, and did not go round the same calls or redo the last part's. One part
- * that only reads after one that changed something is checking that work, not a stall (DECISIONS.md#d-210).
+ * something done with an effect, mostly worked, and did not go round the same calls or redo the last part's.
  */
 export function stalled(steps: readonly Step[], before: readonly Step[] = []): string | undefined {
   const done = steps.filter((s) => s.state === "ok" || s.state === "error");
@@ -18,11 +17,10 @@ export function stalled(steps: readonly Step[], before: readonly Step[] = []): s
   if (!ok.length) return "none of its calls worked";
   if (ok.length < done.length / 5) return "most of its calls failed";
   const acted = new Set(ok.filter((s) => s.effect !== "none").map(signature));
-  const actedBefore = before.some((s) => s.state === "ok" && s.effect !== "none");
-  if (!acted.size && !actedBefore) return "it only looked things up and changed nothing";
+  if (!acted.size) return "it only looked things up and changed nothing";
   if (new Set(done.map(signature)).size < done.length / 2) return "it kept repeating the same calls";
   const earlier = new Set(before.map(signature));
   const redone = [...acted].filter((x) => earlier.has(x)).length;
-  if (earlier.size && acted.size && redone >= acted.size * 0.8) return "it redid what its last part had done";
+  if (earlier.size && redone >= acted.size * 0.8) return "it redid what its last part had done";
   return undefined;
 }

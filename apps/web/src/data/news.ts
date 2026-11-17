@@ -3,14 +3,14 @@
 import { client } from "./client.ts";
 import { createStore, useSlice } from "./createStore.ts";
 
-import { type NewsItem, withRead } from "./newsModel.ts";
+import type { NewsItem } from "./newsModel.ts";
 
-/** The entries the owner opened on this device: the others keep their dot in the menu, and the button its own. */
-const READ_KEY = "apx.newsRead";
+/** The entries there were the last time the menu opened on this device: what is newer gets the button's dot. */
+const LOOKED_KEY = "apx.newsLooked";
 
-function loadRead(): string[] | null {
+function readLooked(): string[] | null {
   try {
-    const raw: unknown = JSON.parse(localStorage.getItem(READ_KEY) ?? "null");
+    const raw: unknown = JSON.parse(localStorage.getItem(LOOKED_KEY) ?? "null");
     return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : null;
   } catch {
     return null;
@@ -19,12 +19,12 @@ function loadRead(): string[] | null {
 
 type State = {
   entries: NewsItem[] | undefined;
-  read: string[] | null;
+  looked: string[] | null;
   /** The dialog: closed (null), every release ("all") or opened on one entry (its id). */
   open: string | null;
 };
 
-const store = createStore<State>({ entries: undefined, read: loadRead(), open: null });
+const store = createStore<State>({ entries: undefined, looked: readLooked(), open: null });
 
 export const useNews = <T>(select: (s: State) => T): T => useSlice(store, select);
 
@@ -38,16 +38,21 @@ export async function loadNews(): Promise<void> {
   }
 }
 
-/** Opening one entry reads it; opening every release reads them all. A release while the panel was open brings new ones. */
-export function openNews(id = "all"): void {
-  const { entries = [], read } = store.get();
-  const next = withRead(entries, read, id === "all" ? entries.map((e) => e.id) : [id]);
-  store.set({ open: id, read: next });
+/** The menu was opened: what it lists now is known, and the dot goes away. */
+export async function lookAtNews(): Promise<void> {
+  await loadNews();
+  const looked = (store.get().entries ?? []).map((e) => e.id);
+  store.set({ looked });
   try {
-    localStorage.setItem(READ_KEY, JSON.stringify(next));
+    localStorage.setItem(LOOKED_KEY, JSON.stringify(looked));
   } catch {
-    // Storage blocked: read for this session only.
+    // Storage blocked: known for this session only.
   }
+}
+
+/** Opening reads them again: a release while the panel was open brings new ones. */
+export function openNews(id = "all"): void {
+  store.set({ open: id });
   void loadNews();
 }
 export const closeNews = (): void => store.set({ open: null });

@@ -1,7 +1,6 @@
 // When the core does not answer, the terminal is what is left: `apx doctor` finds out why from this machine (the
 // service, the core's log, the release feed) and `apx update` brings in a newer bundle without the core. Both work
 // with the core down, so they cannot go through the protocol. See HISTORY.md#cli-without-core.
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -46,11 +45,6 @@ export type DoctorFacts = {
 function logCause(lines: string[], port: string): { cause: string; fix: string } | undefined {
   const started = lines.findLastIndex((l) => l.includes("apx core listening"));
   const since = lines.slice(started + 1).join("\n");
-  if (since.includes("Cannot reconcile hotfix database") || since.includes("Cannot reconcile database migrations"))
-    return {
-      cause: "This database does not match the installed APX migrations. Keep your data; do not reset its version.",
-      fix: "apx doctor --fix (recognized migrations only; unknown schema changes require support)",
-    };
   if (since.includes("ERR_MODULE_NOT_FOUND"))
     return { cause: "This APX version is missing files, so its core cannot start.", fix: "update" };
   if (since.includes("EADDRINUSE"))
@@ -193,28 +187,10 @@ export function compactionLines(r: StoreCompaction): string[] {
 /** `apx doctor`: why the core does not answer here, and the one thing to run next; `fix` also compacts the store. */
 export async function doctor(o: {
   json?: boolean | undefined;
-  schema?: boolean | undefined;
   env?: NodeJS.ProcessEnv;
   fix?: Pick<ApxClient, "call">;
 }): Promise<void> {
   const env = o.env ?? process.env;
-  if (o.schema) {
-    if (o.fix) throw new Error("Schema diagnosis is read-only; run doctor --fix separately.");
-    if (env.APX_URL)
-      throw new Error("Schema diagnosis is local only. Select APX_HOME on the affected server and unset APX_URL.");
-    const result = execFileSync(
-      process.execPath,
-      [path.join(path.dirname(coreMain()), "db", "doctor-repair-main.ts"), "--schema"],
-      {
-        env: { ...env, APX_HOME: apxHome(env) },
-        encoding: "utf8",
-        timeout: 120_000,
-        maxBuffer: 8 * 1024 * 1024,
-      },
-    );
-    console.log(JSON.stringify(JSON.parse(result), null, 2));
-    return;
-  }
   const { url } = localConnection(env);
   const install = installOf(env);
   const feed = feedOf(env);
@@ -234,26 +210,8 @@ export async function doctor(o: {
   if (!d.ok) process.exitCode = 1;
   if (!o.fix) return;
   if (!facts.core) {
-    if (env.APX_URL)
-      throw new Error("Offline repair is local only. Unset APX_URL and select the affected APX_HOME on its server.");
-    const result = execFileSync(
-      process.execPath,
-      [path.join(path.dirname(coreMain()), "db", "doctor-repair-main.ts")],
-      {
-        env: { ...env, APX_HOME: apxHome(env) },
-        encoding: "utf8",
-        timeout: 120_000,
-        maxBuffer: 1024 * 1024,
-      },
-    );
-    process.exitCode = 0;
     console.log(
-      o.json
-        ? result.trim()
-        : card("APX doctor --fix", [
-            result.trim(),
-            "Repair completed. Start APX and run apx doctor to check it. No service was restarted.",
-          ]),
+      card("APX doctor --fix", ["The core must be running to compact its database: start it, then run this again."]),
     );
     return;
   }

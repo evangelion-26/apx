@@ -6,7 +6,6 @@
 export const BY_TOOL: Readonly<Record<string, string>> = {
   "agents.create": "agent_set",
   "agents.update": "agent_set",
-  "agents.review_ack": "agent_set",
   "agents.archive": "agent_set",
   "org.set": "agent_set",
   "agents.set_limits": "agent_limits",
@@ -21,13 +20,10 @@ export const BY_TOOL: Readonly<Record<string, string>> = {
 
 /**
  * Tools above that act as the owner yet may run without a card in Total (or under the agent's rule `auto`), by reason.
- * Every other one says which calls keep their card with `keepsCard` (DECISIONS.md#d-143, DECISIONS.md#d-203);
- * owner-setting.test.ts holds it. apx_settings says it per method (`Setting.asks`).
+ * Every other one marks its changes `ownerSetting` or `keepsCard` (DECISIONS.md#d-143); owner-setting.test.ts holds it.
  */
 export const TOTAL_SKIPS: Readonly<Record<string, string>> = {
   routine_set: "the owner's decision: routines change freely for an agent they set to Total",
-  agent_set:
-    "the owner's decision: the team changes at their word in the super-agent's mode; autonomy and the main model stay theirs (DECISIONS.md#d-203)",
   asana: "a write to the owner's Asana acts in their name, which Total lets run like a send (DECISIONS.md#d-047)",
 };
 
@@ -42,14 +38,6 @@ export const OWNER_ONLY: Readonly<Record<string, string>> = {
   "email.signature_import": "it only fills the owner's signature editor with Gmail's; saving it is theirs",
   "engines.set_usage": "the owner chooses whether APX queries and displays their external account limits",
   "secrets.set": SECRET,
-  "channels.add": "a new account starts with its sign-in, which is the owner's to give (Channels › New channel)",
-  "contacts.add":
-    "the panel's one-step Add contact; agents add a contact and its address with contacts.set and contacts.address",
-  "contacts.keep":
-    "the panel's one-step keep from a channel's people; agents add a contact with contacts.set and contacts.address and take an address as the owner's with contacts.claim, on its card",
-  "contacts.unclaim":
-    "which addresses are the owner's own is theirs to take back; an agent only proposes taking one, with contacts.claim's card (DECISIONS.md#d-144)",
-  "secrets.move": "which project a stored secret belongs to is the owner's to say, as setting it is",
   "secrets.set_sites":
     "where agents may sign in with a stored secret is the owner's to say; an agent asks with its own card (DECISIONS.md#d-193)",
   "providers.set": SECRET,
@@ -71,8 +59,6 @@ export const OWNER_ONLY: Readonly<Record<string, string>> = {
   "webhooks.set": MACHINE,
   "models.set_config": POWER,
   "threads.model": POWER,
-  "threads.group":
-    "a prototype behind APX_GROUP_CHATS (rules/GROUP_CHAT.md); the owner makes a group while it is tried",
   "tools.grant_set": POWER,
   "tools.revoke": POWER,
   "mcp.trust": POWER,
@@ -84,7 +70,6 @@ export const OWNER_ONLY: Readonly<Record<string, string>> = {
   "flows.history_restore": "the owner brings back an earlier drawing from the Flow's page, having looked at it",
   "flows.path_set": "a new address stops the old one, which the services that call it still use",
   "mcp.approveTool": POWER,
-  "mcp.toolMode": POWER,
   "environments.enable": POWER,
   "environments.bind": POWER,
   "telemetry.set": POWER,
@@ -140,7 +125,6 @@ export const OWNER_ONLY: Readonly<Record<string, string>> = {
   "terminal.resize": PANEL,
   "terminal.close": PANEL,
   "threads.compact": PANEL,
-  "threads.aside": "the owner's own question beside a chat, answered by that chat's agent; an agent asks in a chat",
   "threads.flow_editor": "the Flow editor says which Flow its own chat draws; agents read it in that chat's turns",
   "threads.delete": PANEL,
   "threads.fork": PANEL,
@@ -159,8 +143,6 @@ export const OWNER_ONLY: Readonly<Record<string, string>> = {
   "environments.display": PANEL,
   "environments.screen": PANEL,
   "channels.recover": PANEL,
-  "channels.email_history":
-    "the owner explicitly imports private mailbox history with apx channels email-history; agents must not import it unasked",
   "surfaces.import": PANEL,
   "sessions.resume": PANEL,
   "runs.respond": AS_OWNER,

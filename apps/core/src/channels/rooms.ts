@@ -1,4 +1,4 @@
-// Public rooms (a Discord server's channels, Telegram and WhatsApp groups the owner listed). Every message there is kept in the room's chat, so the
+// Public rooms (a Discord server's channels, Telegram groups the owner listed). Every message there is kept in the room's chat, so the
 // agent knows what the room was talking about when it is called; whether it answers depends on the room's mode, who
 // called it, a cheap model's judgment ("useful" rooms) and the room's limits. Answers are sealed turns, the owner's
 // too: the room is public. See DECISIONS.md#d-041
@@ -9,10 +9,8 @@ import { withinHours } from "../domain/hours.ts";
 import { ownerTimeZone } from "../domain/owner.ts";
 import type { Store } from "../domain/store.ts";
 import { previewOf } from "../domain/threads.ts";
-import type { RunTimers } from "../engine/engine.ts";
 import type { Log } from "../log.ts";
 import type { InternalCall } from "../rpc/internal.ts";
-import { agentProject, roomAnswerer } from "./agent-project.ts";
 import type { TellOwner } from "./owner-notices.ts";
 import { channelTexts } from "./texts.ts";
 import type { ChannelConfig } from "./types.ts";
@@ -56,16 +54,6 @@ export function roomDecision(o: {
   return o.mode === "useful" ? "gate" : "keep";
 }
 
-/**
- * A line that is the owner's own phone speaks in a group as the owner: its groups are only read until the owner allows
- * the agent to answer there as them. See DECISIONS.md#d-216
- */
-/** The owner turned the account's groups and rooms off: what arrives from them is dropped. */
-export const roomsOff = (cfg: Pick<ChannelConfig, "rooms">): boolean => cfg.rooms?.off === true;
-
-export const roomsReadOnly = (cfg: Pick<ChannelConfig, "self_owner" | "rooms">): boolean =>
-  cfg.self_owner === true && cfg.rooms?.as_owner !== true;
-
 /** A room message's reply in the outside world: no pings to everyone. */
 export const quietMentions = (text: string) => text.replace(/@(everyone|here)\b/g, "@​$1");
 
@@ -99,7 +87,7 @@ type Pending = {
   rowId: string;
   gated: boolean;
   settle(v: "done"): void;
-  cancel(): void;
+  timer: ReturnType<typeof setTimeout>;
 };
 
 export function createRooms(deps: {
@@ -111,19 +99,9 @@ export function createRooms(deps: {
   judge?: ((system: string, user: string, about: AuxAbout) => Promise<string | undefined>) | undefined;
   burstMs?: number;
   now?: () => number;
-  /** The clock the burst and each person's pause run on (tests move it); `now` above defaults to it. */
-  timers?: RunTimers;
 }) {
   const { store } = deps;
-  const timers: RunTimers = deps.timers ?? {
-    now: () => Date.now(),
-    after(ms, callback) {
-      const timer = setTimeout(callback, ms);
-      timer.unref?.();
-      return () => clearTimeout(timer);
-    },
-  };
-  const clock = deps.now ?? timers.now;
+  const clock = deps.now ?? Date.now;
   const burstMs = deps.burstMs ?? BURST_MS;
   /** Per room and person: the message waiting for the burst to settle. */
   const pending = new Map<string, Pending>();
@@ -140,15 +118,13 @@ export function createRooms(deps: {
   };
 
   /** The room's chat (one per room), made the first time something is said there. */
-  function roomThread(cfg: ChannelConfig, room: { id: string; name: string; agent_id?: string | undefined }): Thread {
+  function roomThread(cfg: ChannelConfig, room: { id: string; name: string }): Thread {
     const known = store.threads.byConversation(cfg.id, room.id);
     if (known) return known;
-    const agent = roomAnswerer(store, cfg, room);
     const t = store.threads.create({
       kind: "channel",
       title: `#${room.name || room.id}`,
-      agent_ids: [agent],
-      project_id: agentProject(store, agent),
+      agent_ids: [cfg.agent_id],
       channel: { id: cfg.id, conversation: room.id },
     });
     store.threads.mergeContext(t.id, { room: { name: room.name || room.id } });
@@ -239,10 +215,7 @@ export function createRooms(deps: {
       const at = reported.get(roomId) ?? 0;
       if (now - at > REPORT_MS) {
         reported.set(roomId, now);
-        deps.tell(
-          { text: channelTexts(store).roomCap(`#${roomName}`) },
-          { level: "warn", title: `#${roomName}`, channel: cfg.id },
-        );
+        deps.tell({ text: channelTexts(store).roomCap(`#${roomName}`) }, { level: "warn", title: `#${roomName}` });
       }
       return true;
     }
@@ -291,17 +264,17 @@ export function createRooms(deps: {
     handle(cfg: ChannelConfig, m: Inbound, rowId: string): Promise<"done" | "ignored"> {
       const settings = cfg.rooms;
       const room = settings?.rooms.find((r) => r.id === m.conversation);
-      if (!settings || settings.off || !room || !m.text.trim()) return Promise.resolve("ignored");
+      if (!settings || !room || !m.text.trim()) return Promise.resolve("ignored");
       const thread = roomThread(cfg, room);
       const who = authorOf(cfg, m);
       const called = Boolean(m.room?.called) || calledByName(m.text, settings.names);
       const decision = who.blocked
         ? "keep"
         : roomDecision({
-            mode: roomsReadOnly(cfg) ? "read" : room.mode,
+            mode: room.mode,
             called,
             owner: who.owner,
-            ownerOnly: settings.owner_only || cfg.owner_only === true,
+            ownerOnly: settings.owner_only,
             closed: Boolean(cfg.hours && !withinHours(cfg.hours, new Date(clock()), ownerTimeZone(store))),
           });
       if (decision === "keep") {
@@ -312,7 +285,7 @@ export function createRooms(deps: {
       const key = `${cfg.id}|${room.id}|${m.sender.id}`;
       const before = pending.get(key);
       if (before) {
-        before.cancel();
+        clearTimeout(before.timer);
         keep(cfg, thread, before.m);
         before.settle("done");
       }
@@ -323,18 +296,19 @@ export function createRooms(deps: {
           // A burst with a real call in it is answered without asking the model.
           gated: decision === "gate" && (!before || before.gated),
           settle,
-          cancel: timers.after(burstMs, () => {
+          timer: setTimeout(() => {
             if (pending.get(key) === p) pending.delete(key);
             answer(cfg, p)
               .catch((err) => deps.log.warn({ channel: cfg.id, err: String(err).slice(0, 200) }, "room answer failed"))
               .finally(() => settle("done"));
-          }),
+          }, burstMs),
         };
+        p.timer.unref?.();
         pending.set(key, p);
       });
     },
     stop(): void {
-      for (const p of pending.values()) p.cancel();
+      for (const p of pending.values()) clearTimeout(p.timer);
       pending.clear();
     },
   };

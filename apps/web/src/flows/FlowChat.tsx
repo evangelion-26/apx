@@ -1,4 +1,3 @@
-import "../styles/panel-parts.css";
 import { IconButton, Icons, Skeleton } from "@apx/ui";
 import { useEffect } from "react";
 import { ChatComposer } from "../chat/composer/ChatComposer.tsx";

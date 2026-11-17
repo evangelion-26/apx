@@ -124,8 +124,6 @@ export function ResizeHandle({
       onPointerMove={move}
       onPointerUp={() => end(true)}
       onPointerCancel={() => end(false)}
-      // A capture lost without a release (the handle re-rendered away) must still end the drag.
-      onLostPointerCapture={() => end(false)}
       onKeyDown={key}
       onDoubleClick={onReset}
     />

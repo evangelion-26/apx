@@ -1,14 +1,15 @@
-import "../../styles/chat-cards.css";
 import type { ConnectOffer, Part } from "@apx/protocol";
 import { Badge, Button, Icons, IntegrationIcon } from "@apx/ui";
 import { useCallback, useEffect, useState } from "react";
 import { KindTile } from "../../channels/KindIcon.tsx";
 import { CHANNEL_KINDS, isChannelKind } from "../../channels/kinds.ts";
-import { openChannelKind } from "../../channels/openKind.ts";
+import { send } from "../../data/actions.ts";
 import { loadChannels, useChannels } from "../../data/channels.ts";
 import { client } from "../../data/client.ts";
+import { useData } from "../../data/state.ts";
 import { useT } from "../../i18n/index.ts";
 import { ConnectDialog, ConnectForm, describe, type Integration } from "../../resources/IntegrationsTab.tsx";
+import { go } from "../../shell/nav.ts";
 
 type Connect = Extract<Part, { type: "connect" }>;
 
@@ -17,11 +18,12 @@ const STACK = ["github", "gmail", "notion", "slack", "google-drive", "linear"];
 const STACK_SIZE = 4;
 
 /**
- * Apps and channels the agent offers to connect for what the owner asked. An integration's form opens here, a channel
- * opens its setup in Settings; once connected, from here or anywhere else, the core tells the agent that offered it.
+ * Apps and channels the agent offers to connect for what the owner asked. An integration's form opens here, and once
+ * it is connected the agent is told, while the chat is still on this answer; a channel opens its setup in Settings.
  */
-export function ConnectPart({ part }: { part: Connect }) {
+export function ConnectPart({ part, threadId, messageId }: { part: Connect; threadId: string; messageId: string }) {
   const t = useT();
+  const last = useData((s) => s.messages[threadId]?.at(-1)?.id === messageId);
   const channels = useChannels((s) => s.channels);
   const channelsReady = useChannels((s) => s.ready);
   const [integrations, setIntegrations] = useState<Integration[]>();
@@ -52,10 +54,14 @@ export function ConnectPart({ part }: { part: Connect }) {
     (i) => !i.connected && !i.coming && !part.offers.some((o) => o.kind === "integration" && o.id === i.id),
   );
   const stack = [...more].sort((a, b) => rank(a.id) - rank(b.id)).slice(0, STACK_SIZE);
+  const connectedNow = async (label: string) => {
+    await loadIntegrations();
+    if (last) await send(threadId, t("connect.done", { name: label })).catch(() => {});
+  };
 
   const connect = (o: ConnectOffer) => {
     if (o.kind === "channel") {
-      if (isChannelKind(o.id)) openChannelKind(o.id, channels);
+      if (isChannelKind(o.id)) go.channelConfig(o.id);
       return;
     }
     const i = integrations?.find((x) => x.id === o.id);
@@ -115,9 +121,9 @@ export function ConnectPart({ part }: { part: Connect }) {
         <ConnectDialog
           list={integrations}
           onClose={() => setExploring(false)}
-          onConnected={async () => {
+          onConnected={async (id) => {
             setExploring(false);
-            await loadIntegrations();
+            await connectedNow(integrations.find((i) => i.id === id)?.label ?? id);
           }}
         />
       )}
@@ -128,7 +134,7 @@ export function ConnectPart({ part }: { part: Connect }) {
           onClose={() => setOpen(undefined)}
           onDone={async () => {
             setOpen(undefined);
-            await loadIntegrations();
+            await connectedNow(open.label);
           }}
         />
       )}

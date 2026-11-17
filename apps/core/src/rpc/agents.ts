@@ -11,13 +11,11 @@ import {
   updateAgentFile,
   writeNewAgent,
 } from "../apc/write.ts";
-import { contactAgentOf } from "../channels/types.ts";
-import { agentDirectory, projectTeam } from "../domain/agent-directory.ts";
-import { acknowledgeAgentReview, agentRevision, pendingAgentReviews } from "../domain/agent-review.ts";
+import { agentDirectory } from "../domain/agent-directory.ts";
 import { type AgentRecord, publicAgent, rulesText } from "../domain/agents.ts";
 import type { EngineIds } from "../domain/refs.ts";
 import type { Store } from "../domain/store.ts";
-import { badRequest, CallError, conflict, errorMessage, notFound } from "../errors.ts";
+import { badRequest, errorMessage, notFound } from "../errors.ts";
 import { refProblem } from "../models/choice.ts";
 import { toolCatalog } from "../tools/policy.ts";
 import type { Tool } from "../tools/types.ts";
@@ -52,7 +50,6 @@ export function agentHandlers(store: Store, apc: ApcSync, engines: EngineIds, to
     try {
       return fn();
     } catch (err) {
-      if (err instanceof CallError) throw err;
       throw badRequest(errorMessage(err));
     }
   };
@@ -88,30 +85,15 @@ export function agentHandlers(store: Store, apc: ApcSync, engines: EngineIds, to
       if (p.id === cur.id) throw badRequest(`${parent} already reports to ${cur.name}: that would make a loop`);
     return keyOf(target);
   };
-  const teamIn = (projectId: string) => {
-    const team = projectTeam(store, projectId);
-    if (!team) throw notFound(`project ${projectId}`);
-    return team;
-  };
   const fresh = (id: string) => {
     const a = store.agents.get(id);
     if (!a) throw notFound(`agent ${id}`);
     return publicAgent(a);
   };
 
-  const reviewedCurrent = (id: string, revision: string): AgentRecord => {
-    const before = store.agents.get(id);
-    if (before?.source === "apc" && before.project_id) apc.register(rootOf(before.project_id));
-    const cur = store.agents.get(id);
-    if (!cur || !store.agents.active(id)) throw notFound(`agent ${id}`);
-    if (agentRevision(store, cur) !== revision)
-      throw conflict("The agent changed since this review; read it again before applying the proposal");
-    return cur;
-  };
-
   return {
-    "agents.list": ({ project_id }) => ({
-      agents: project_id === undefined ? agentDirectory(store) : teamIn(project_id),
+    "agents.list": () => ({
+      agents: agentDirectory(store),
       // A deleted agent's prompt and settings are gone already; what is left is who it was.
       former: store.agents.former().map(publicAgent),
     }),
@@ -119,7 +101,7 @@ export function agentHandlers(store: Store, apc: ApcSync, engines: EngineIds, to
     "agents.get": ({ agent }) => {
       const a = store.agents.get(agent);
       if (!a) throw notFound(`agent ${agent}`);
-      return { agent: publicAgent(a), prompt: a.prompt, revision: agentRevision(store, a) };
+      return { agent: publicAgent(a), prompt: a.prompt };
     },
 
     "agents.create": (p) => {
@@ -169,14 +151,8 @@ export function agentHandlers(store: Store, apc: ApcSync, engines: EngineIds, to
 
     "agents.clone": (p) => cloneAgents(store, apc, p),
 
-    "agents.review_queue": ({ project_id }) => ({ agents: pendingAgentReviews(store, project_id) }),
-    "agents.review_ack": (p) => {
-      const cur = reviewedCurrent(p.agent, p.if_revision);
-      acknowledgeAgentReview(store, cur);
-      return { ok: true as const };
-    },
     "agents.update": (p) => {
-      const cur = p.if_revision ? reviewedCurrent(p.agent, p.if_revision) : store.agents.get(p.agent);
+      const cur = store.agents.get(p.agent);
       if (!cur) throw notFound(`agent ${p.agent}`);
       const model_choice = p.model_choice;
       checkChoice(model_choice);
@@ -206,18 +182,7 @@ export function agentHandlers(store: Store, apc: ApcSync, engines: EngineIds, to
         const reports = slug !== cur.slug ? reportsOf(teamOf(cur.project_id), cur) : [];
         onDisk(() => {
           if (slug !== cur.slug) renameAgentFile(root, cur.slug as string, slug);
-          const expected = p.if_revision;
-          updateAgentFile(
-            root,
-            slug,
-            definition,
-            p.prompt,
-            expected
-              ? () => {
-                  reviewedCurrent(cur.id, expected);
-                }
-              : undefined,
-          );
+          updateAgentFile(root, slug, definition, p.prompt);
           for (const r of reports) if (r.slug) updateAgentFile(root, r.slug, { parent: slug });
         });
         apc.sync(cur.project_id);
@@ -244,7 +209,6 @@ export function agentHandlers(store: Store, apc: ApcSync, engines: EngineIds, to
       const now = store.agents.get(cur.id) ?? cur;
       if (model_choice !== undefined || p.browser_profile)
         setLocal(now, { browser_profile: p.browser_profile, model_choice });
-      if (p.if_revision && p.prompt !== undefined) acknowledgeAgentReview(store, store.agents.get(cur.id) ?? now);
       return fresh(cur.id);
     },
 
@@ -252,13 +216,6 @@ export function agentHandlers(store: Store, apc: ApcSync, engines: EngineIds, to
       const cur = store.agents.get(agent);
       if (!cur) throw notFound(`agent ${agent}`);
       if (cur.kind === "secretary") throw badRequest("the secretary cannot be archived");
-      // A channel it answers would answer as nobody: the owner picks who takes it over first.
-      const answered = store.settings
-        .read("channels")
-        .filter((c) => c.agent_id === cur.id || contactAgentOf(c) === cur.id)
-        .map((c) => c.label);
-      if (answered.length)
-        throw conflict(`${cur.name} answers ${answered.join(", ")}: choose who answers it in Channels first`);
       let moved: string | undefined;
       if (cur.source === "apc" && cur.project_id && cur.slug) {
         const root = rootOf(cur.project_id);

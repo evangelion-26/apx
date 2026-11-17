@@ -1,6 +1,6 @@
 import "../styles/screens.css";
 import { Badge, Button, EmptyState, IconButton, Icons, ProjectTile, Tabs } from "@apx/ui";
-import { type ReactNode, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { loadProjectThreads } from "../data/actions.ts";
 import {
   findProject,
@@ -13,35 +13,22 @@ import {
 } from "../data/identity.ts";
 import { parseNewChat } from "../data/newChat.ts";
 import { useData } from "../data/state.ts";
-import { FilesScreen } from "../files/FilesScreen.tsx";
 import { useT } from "../i18n/index.ts";
 import { NewChatMenu } from "../inbox/NewChatMenu.tsx";
 import { ResourcesView } from "../resources/ResourcesView.tsx";
 import { RoutinesPane } from "../routines/RoutinesPane.tsx";
 import { ChatWorkspace } from "../shell/ChatWorkspace.tsx";
 import type { Layout } from "../shell/layout.ts";
-import { go, nav, useNav } from "../shell/nav.ts";
-import { PROJECT_TABS, type ProjectTab } from "../shell/projectTabs.ts";
+import { go, nav, PROJECT_TABS, type ProjectTab, useNav } from "../shell/nav.ts";
 import { ProjectTasks } from "../tasks/TasksList.tsx";
 import { ProjectFiles } from "./files/ProjectFiles.tsx";
+import { ProjectArtifacts } from "./ProjectArtifacts.tsx";
 import { ProjectMemory } from "./ProjectMemory.tsx";
 import { ProjectOverview } from "./ProjectOverview.tsx";
 import { ProjectSettings } from "./ProjectSettings.tsx";
 import { ProjectAgents } from "./ProjectTeam.tsx";
 import { kindIcon, kindLabel } from "./projectKind.ts";
 import { useProjectCounts } from "./useProjectCounts.ts";
-
-const TAB_ICONS: Record<ProjectTab, ReactNode> = {
-  overview: <Icons.LayoutGrid />,
-  chats: <Icons.MessageCircle />,
-  team: <Icons.Users />,
-  tasks: <Icons.ListChecks />,
-  routines: <Icons.RefreshCw />,
-  shared: <Icons.Paperclip />,
-  folder: <Icons.Folder />,
-  memory: <Icons.Brain />,
-  resources: <Icons.Layers />,
-};
 
 /** A project: header (tile, name, path, New chat) + underline tabs. SPEC §2.9. */
 export function ProjectScreen({ layout }: { layout: Layout }) {
@@ -81,7 +68,6 @@ export function ProjectScreen({ layout }: { layout: Layout }) {
     <section className="project" aria-label={project.name}>
       <ProjectHeader project={project} tab={tab} />
       <div className="project__body">
-        {/* Each tab takes the whole width: the overview keeps the project's subprojects and agents in its own column. */}
         <TabBody project={project} tab={tab} layout={layout} />
       </div>
     </section>
@@ -90,8 +76,6 @@ export function ProjectScreen({ layout }: { layout: Layout }) {
 
 function ProjectHeader({ project, tab }: { project: ProjectEntry; tab: ProjectTab }) {
   const t = useT();
-  const projects = useData((s) => s.projects);
-  const parent = project.parent ? findProject(projects, project.parent) : undefined;
   const counts = useProjectCounts(project.id);
   const [settings, setSettings] = useState(false);
   const KindIcon = kindIcon(project.kind);
@@ -101,17 +85,6 @@ function ProjectHeader({ project, tab }: { project: ProjectEntry; tab: ProjectTa
         <ProjectTile tone={projectTone(project.id)} initial={projectInitial(project.name)} size={36} />
         <div className="project__titles">
           <div className="project__name">
-            {parent && (
-              <>
-                {/* ui: part of the heading's text, set as the title is; a Button would draw a control there. */}
-                <button type="button" className="project__parent" onClick={() => go.project(parent.id)}>
-                  {parent.name}
-                </button>
-                <span className="project__parentsep" aria-hidden="true">
-                  /
-                </span>
-              </>
-            )}
             <h1>{project.name}</h1>
             <button
               type="button"
@@ -135,36 +108,23 @@ function ProjectHeader({ project, tab }: { project: ProjectEntry; tab: ProjectTa
         </div>
         <NewChatMenu
           projectId={project.id}
-          trigger={
-            <Button className="project__newchat" leadingIcon={<Icons.SquarePen size={14} />} aria-label={t("chat.new")}>
-              <span className="project__newchatlabel">{t("chat.new")}</span>
-            </Button>
-          }
+          trigger={<Button leadingIcon={<Icons.SquarePen size={14} />}>{t("chat.new")}</Button>}
         />
         <IconButton
           variant="secondary"
           size="lg"
-          shape="circle"
           label={t("project.settings")}
           icon={<Icons.Settings size={16} />}
           onClick={() => setSettings(true)}
         />
       </div>
-      {parent && (
-        <p className="project__subnote">
-          <Icons.Info size={14} />
-          {t("project.subHint", { name: parent.name })}
-        </p>
-      )}
       <Tabs
-        variant="chips"
         className="project__tabs"
         value={tab}
         onValueChange={(v) => go.projectTab(v as ProjectTab)}
         items={PROJECT_TABS.map((x) => ({
           value: x.id,
           label: t(x.label),
-          icon: TAB_ICONS[x.id],
           count: counts[x.id],
         }))}
       />
@@ -185,9 +145,9 @@ function TabBody({ project, tab, layout }: { project: ProjectEntry; tab: Project
       return <ProjectTasks projectId={project.id} />;
     case "routines":
       return <RoutinesPane projectId={project.id} />;
-    case "shared":
-      return <FilesScreen key={project.id} within={project} />;
-    case "folder":
+    case "artifacts":
+      return <ProjectArtifacts key={project.id} project={project} />;
+    case "files":
       return <ProjectFiles key={project.id} project={project} />;
     case "memory":
       return <ProjectMemory project={project} />;

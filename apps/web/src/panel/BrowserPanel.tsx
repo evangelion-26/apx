@@ -1,12 +1,10 @@
 import "../styles/browser-panel.css";
 import type { TabInfo } from "@apx/protocol";
-import { EmptyState, IconButton, Icons, Menu, type MenuEntry } from "@apx/ui";
+import { BrowserTabs, EmptyState, IconButton, Icons, Menu, type MenuEntry } from "@apx/ui";
 import { useEffect, useState } from "react";
 import { hostPath } from "../common/format.ts";
-import { browserClose, browserControl, loadTabs } from "../data/actions.ts";
+import { browserClose, loadTabs } from "../data/actions.ts";
 import { useSlice } from "../data/createStore.ts";
-import { blobOf } from "../data/identity.ts";
-import { useData } from "../data/state.ts";
 import { useT } from "../i18n/index.ts";
 import { nav } from "../shell/nav.ts";
 import { BrowserEdit, leaveEditing } from "./BrowserEdit.tsx";
@@ -14,13 +12,11 @@ import { BrowserToolbar, HandoffBar } from "./BrowserToolbar.tsx";
 import { BrowserViewport } from "./BrowserViewport.tsx";
 import { browserEdit } from "./browserEdit.ts";
 import { canPopOut, IS_BROWSER_WINDOW, openOutside, popOutBrowser, useInstalledBrowsers } from "./browserWindow.ts";
-import { ControlLock } from "./ControlLock.tsx";
-import { PanelTabs } from "./PanelTabs.tsx";
 import { PanelHeader } from "./SidePanel.tsx";
 import { useActiveTab } from "./useActiveTab.ts";
 
 /**
- * Browser panel: its tabs under the header, toolbar (back · reload · address · who drives), then the page. The desktop
+ * Browser panel: tab strip in the header, toolbar (back · reload · address · who drives), then the page. The desktop
  * app's browser window shows the same panel on its own.
  */
 export function BrowserPanel() {
@@ -39,14 +35,10 @@ export function BrowserPanel() {
     if (editing && !editing.startsWith("widget:") && !inEdit) void leaveEditing(editing);
   }, [editing, inEdit]);
 
-  // Over the live page of the desktop app nothing can float: there the bar keeps the button.
-  const locked = !adding && active?.control.kind === "agent" && !window.apxDesktop;
   return (
     <>
       <PanelHeader
-        kind="browser"
         closable={!IS_BROWSER_WINDOW}
-        widen={!IS_BROWSER_WINDOW}
         actions={
           <>
             {active && <OpenMenu tab={active} />}
@@ -59,22 +51,23 @@ export function BrowserPanel() {
             )}
           </>
         }
-      />
-      <PanelTabs
-        label={t("panel.browser")}
-        tabs={tabs.map((x) => ({ id: x.tab, label: x.title || hostPath(x.url), dot: x.control.kind }))}
-        value={adding ? undefined : active?.tab}
-        onSelect={(id) => {
-          setAdding(false);
-          nav.set({ browserTab: id });
-        }}
-        onClose={(id) => void browserClose(id)}
-        onNew={() => setAdding(true)}
-        newLabel={t("browser.newTab")}
-      />
+      >
+        <BrowserTabs
+          value={adding ? undefined : active?.tab}
+          onValueChange={(id) => {
+            setAdding(false);
+            nav.set({ browserTab: id });
+          }}
+          onClose={(id) => void browserClose(id)}
+          onNew={() => setAdding(true)}
+          newLabel={t("browser.newTab")}
+          closeLabel={t("browser.closeTab")}
+          tabs={tabs.map((x) => ({ id: x.tab, title: x.title || hostPath(x.url), url: x.url, holder: x.control.kind }))}
+        />
+      </PanelHeader>
       {active || adding ? (
         <div className="browser">
-          <BrowserToolbar tab={adding ? undefined : active} onOpened={() => setAdding(false)} locked={locked} />
+          <BrowserToolbar tab={adding ? undefined : active} onOpened={() => setAdding(false)} />
           {!adding && active?.control.kind === "handoff" && <HandoffBar tab={active} />}
           {adding || !active ? (
             <EmptyState icon={<Icons.Globe />} title={t("browser.newTab")}>
@@ -83,10 +76,7 @@ export function BrowserPanel() {
           ) : inEdit ? (
             <BrowserEdit tab={active} />
           ) : (
-            <div className="browser__stage">
-              <BrowserViewport tab={active.tab} />
-              {locked && active.control.kind === "agent" && <BrowserLock tab={active} by={active.control.by} />}
-            </div>
+            <BrowserViewport tab={active.tab} />
           )}
         </div>
       ) : (
@@ -97,29 +87,6 @@ export function BrowserPanel() {
         </div>
       )}
     </>
-  );
-}
-
-/** The agent drives the tab: its page dimmed behind who it is and "Take control". */
-function BrowserLock({ tab, by }: { tab: TabInfo; by: string }) {
-  const t = useT();
-  const agent = useData((s) => s.agents[by]);
-  const [busy, setBusy] = useState(false);
-  const name = agent?.name ?? by;
-  return (
-    <ControlLock
-      agent={name}
-      blob={blobOf(agent)}
-      text={t("browser.agentUsing", { name })}
-      hint={t("panelTabs.browserHint")}
-      action={t("browser.takeControl")}
-      busy={busy}
-      onTake={async () => {
-        setBusy(true);
-        await browserControl(tab.tab, "user");
-        setBusy(false);
-      }}
-    />
   );
 }
 

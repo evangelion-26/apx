@@ -10,7 +10,6 @@ import { processStart, spawnCommand, stopTree } from "../processes.ts";
 import { keepWhilePaused } from "./breaker.ts";
 import { frameInput } from "./context.ts";
 import type { Admit, AdmitFn } from "./engine.ts";
-import { laterReplyTo } from "./home-channel.ts";
 
 /** Set on an agent's commands, so the apx CLI knows an agent runs it, not the owner. */
 const AGENT_ENV = "APX_AGENT";
@@ -27,7 +26,6 @@ export function createJobs(deps: {
   home: string;
   log: Log;
   admit: AdmitFn;
-  spawn?: typeof spawnCommand;
   /** Hands the end to the agent's running turn; false when none can take it, and it gets a turn of its own. */
   steer?: (a: Admit) => boolean;
 }) {
@@ -70,9 +68,7 @@ export function createJobs(deps: {
         exit_code: job.exit_code ?? null,
       },
       text: read(job.id, undefined, WAKE_TAIL).output || "(no output)",
-      reply_to: job.run_id
-        ? laterReplyTo(store, job.thread_id, store.runs.get(job.run_id)?.input?.reply_to)
-        : undefined,
+      reply_to: job.run_id ? store.runs.get(job.run_id)?.input?.reply_to : undefined,
     };
     const kept = keepWhilePaused(store, {
       thread_id: job.thread_id,
@@ -107,17 +103,6 @@ export function createJobs(deps: {
         cwd: o.cwd,
         background: o.background,
       });
-      let child: ReturnType<typeof spawnCommand>;
-      try {
-        // Child commands retain their agent identity; the CLI must not treat them as the owner.
-        const env = { ...commandEnv(), ...(o.agent_id ? { [AGENT_ENV]: o.agent_id } : {}) };
-        child = (deps.spawn ?? spawnCommand)(o.command, { cwd: o.cwd, env, stdio: ["ignore", "pipe", "pipe"] });
-      } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
-        store.jobs.finish(job.id, "failed", undefined, reason);
-        fs.appendFileSync(fileOf(job.id), `\n[could not start: ${reason}]\n`);
-        throw new Error(`Command could not start: ${reason}`, { cause: err });
-      }
       const out = fs.createWriteStream(fileOf(job.id), { flags: "a" });
       let written = 0;
       const write = (chunk: Buffer) => {
@@ -125,6 +110,9 @@ export function createJobs(deps: {
         written += chunk.length;
         out.write(written > OUTPUT_CAP ? Buffer.concat([chunk, Buffer.from("\n[output cut by APX]\n")]) : chunk);
       };
+      // An agent's command says whose it is: `apx chat` run there refuses to speak as the owner (it asks with delegate).
+      const env = { ...commandEnv(), ...(o.agent_id ? { [AGENT_ENV]: o.agent_id } : {}) };
+      const child = spawnCommand(o.command, { cwd: o.cwd, env, stdio: ["ignore", "pipe", "pipe"] });
       if (child.pid) {
         store.jobs.setPid(job.id, child.pid);
         void processStart(child.pid).then(
@@ -143,12 +131,12 @@ export function createJobs(deps: {
       const done = new Promise<JobRecord>((resolve) => {
         let ending = false;
         // `error` and `close` can both fire for one process: it ends (and wakes the agent) once.
-        const end = (state: "completed" | "failed" | "canceled", code?: number, startError?: string) => {
+        const end = (state: "completed" | "failed" | "canceled", code?: number) => {
           if (ending) return;
           ending = true;
           clearTimeout(lifetime);
           out.end(() => {
-            const final = store.jobs.finish(job.id, state, code, startError) ?? (store.jobs.get(job.id) as JobRecord);
+            const final = store.jobs.finish(job.id, state, code) ?? (store.jobs.get(job.id) as JobRecord);
             procs.delete(job.id);
             wake(final);
             resolve(final);
@@ -156,7 +144,7 @@ export function createJobs(deps: {
         };
         child.on("error", (err) => {
           write(Buffer.from(`\n[could not start: ${err.message}]\n`));
-          end("failed", undefined, err.message);
+          end("failed");
         });
         child.on("close", (code) => end(killed ? "canceled" : code === 0 ? "completed" : "failed", code ?? undefined));
       });

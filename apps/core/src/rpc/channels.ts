@@ -1,9 +1,8 @@
 // Channels, the people on them and pairing: owner-only methods (the router refuses anyone else).
 
 import fs from "node:fs";
-import { ErrorCode, type Person, SUPER_AGENT_ID } from "@apx/protocol";
-import { cannotAdd, defaultLabel, newAccount, newAccountId } from "../channels/accounts.ts";
-import { agentProject, contactAnswerer } from "../channels/agent-project.ts";
+import { type ChannelType, ErrorCode } from "@apx/protocol";
+import { CHANNEL_CATALOG } from "../channels/catalog.ts";
 import { pairingRef } from "../channels/inbound.ts";
 import type { Channels } from "../channels/manager.ts";
 import { countryOf, whatsappDigits } from "../channels/phone.ts";
@@ -15,13 +14,11 @@ import { appOnly, noticePrefs, saveNoticePrefs } from "../domain/notices.ts";
 import { ownerTimeZone } from "../domain/owner.ts";
 import { OWNER_ID } from "../domain/persons.ts";
 import { ownerAsked } from "../domain/runs.ts";
-import { HOME_THREAD_ID } from "../domain/seed.ts";
 import type { Sticker } from "../domain/stickers.ts";
 import type { Store } from "../domain/store.ts";
 import { previewOf } from "../domain/threads.ts";
-import { moveHome } from "../engine/home-channel.ts";
 import type { Nudges } from "../engine/nudges.ts";
-import { badRequest, CallError, conflict, errorMessage, notFound } from "../errors.ts";
+import { badRequest, CallError, errorMessage, notFound } from "../errors.ts";
 import type { Handlers } from "./router.ts";
 
 /** How long a send waits for the platform's answer before saying it is still queued (the tools have 15 s). */
@@ -29,7 +26,7 @@ const SETTLE_MS = 8_000;
 
 export function channelHandlers(store: Store, channels: Channels, nudges: Pick<Nudges, "offer">) {
   /** A message an agent sent, with how it went: an agent must not say it went when the platform refused it. */
-  const withDelivery = async ({ outbox, at: _at, ...sent }: ReturnType<Channels["postInRoom"]>) => ({
+  const withDelivery = async ({ outbox, ...sent }: ReturnType<Channels["postInRoom"]>) => ({
     ...sent,
     delivery: await channels.settled(outbox, SETTLE_MS),
   });
@@ -44,27 +41,8 @@ export function channelHandlers(store: Store, channels: Channels, nudges: Pick<N
     const media = store.media.get(s.media_id);
     return media ? [{ ...s, mime: media.mime }] : [];
   };
-  /** An address typed for a channel, as the platform writes it; a number without its country code is read in the
-   * person's country, else the owner's. */
-  const addressOn = (cfg: { type: string; label: string }, address: string, who?: Person) => {
-    const phones = [...(who ? [who] : []), store.persons.owner()].flatMap((p) =>
-      p.addresses.flatMap((a) => phoneIn(a.external_id)),
-    );
-    const typed = typedAddress(cfg.type, address, phones.map(countryOf).find(Boolean));
-    if ("problem" in typed) throw badRequest(typed.problem);
-    if (!typed.external) throw badRequest(`"${address}" is not a ${cfg.label} address`);
-    return typed.external;
-  };
   return {
     "channels.list": () => ({ channels: channels.info() }),
-    "channels.email_history": async ({ channel, ...request }) => {
-      if (!channels.info().some((c) => c.id === channel)) throw notFound(`channel ${channel}`);
-      try {
-        return await channels.mailHistory(channel, request);
-      } catch (err) {
-        throw badRequest(errorMessage(err));
-      }
-    },
     // Open to agents: what channel_list shows. Disabled channels are not there for them.
     "channels.overview": () => ({
       channels: channels
@@ -79,35 +57,19 @@ export function channelHandlers(store: Store, channels: Channels, nudges: Pick<N
         })),
     }),
     "channels.set": async ({ id, channel, token }) => {
-      const roomAgents = (channel?.rooms?.rooms ?? []).map((r) => r.agent_id);
-      for (const agent of [channel?.agent_id, channel?.contacts_agent_id, ...roomAgents])
-        if (agent && !store.agents.active(agent)) throw notFound(`agent ${agent}`);
+      if (channel && !store.agents.list().some((agent) => agent.id === channel.agent_id))
+        throw notFound(`agent ${channel.agent_id}`);
       if (channel?.type === "telegram" && !token && !channels.info().find((c) => c.id === id)?.token_set)
         throw badRequest("a Telegram channel needs its bot token (from @BotFather)");
-      const saved = channels.info();
-      const refused = channel && cannotAdd(channel.type, saved, id);
-      if (refused) throw conflict(refused);
-      const label = channel?.label || saved.find((c) => c.id === id)?.label;
       const config = channel
         ? {
             ...channel,
             owner_thread: "own" as const,
-            service_mode: channel.service_mode ?? saved.find((c) => c.id === id)?.service_mode ?? "base",
-            label: label || defaultLabel(channel.type, id, saved),
+            service_mode: channel.service_mode ?? channels.info().find((c) => c.id === id)?.service_mode ?? "base",
+            label: channel.label || defaultLabel(channel.type),
           }
         : null;
       return { channels: await channels.set(id, config, token) };
-    },
-    "channels.add": async ({ type, label, self_owner, email, token }) => {
-      if (type === "telegram" && !token) throw badRequest("a Telegram channel needs its bot token (from @BotFather)");
-      const saved = channels.info();
-      const refused = cannotAdd(type, saved);
-      if (refused) throw conflict(refused);
-      const id = newAccountId(type, saved);
-      const superAgent = store.agents.list().find((a) => a.kind === "secretary")?.id ?? SUPER_AGENT_ID;
-      const name = label?.trim() || defaultLabel(type, id, saved);
-      const config = newAccount(type, superAgent, { label: name, self_owner, email });
-      return { id, channels: await channels.add(id, config, token) };
     },
     "channels.send": ({ thread, text, omit_signature }) => {
       if (!store.threads.get(thread)) throw notFound(`thread ${thread}`);
@@ -119,7 +81,7 @@ export function channelHandlers(store: Store, channels: Channels, nudges: Pick<N
       return { ok: true as const };
     },
     // Open to agents (the owner's, never a contact's turn): their way to write to a contact for the owner.
-    "channels.message": async ({ person, text, channel, files, omit_signature, stay }, ctx) => {
+    "channels.message": async ({ person, text, channel, files, omit_signature }, ctx) => {
       let sent: ReturnType<typeof channels.messageContact> | undefined;
       const send = () => {
         try {
@@ -154,11 +116,7 @@ export function channelHandlers(store: Store, channels: Channels, nudges: Pick<N
         if (state === "held" || state === "dropped") return { withheld: state };
       } else send();
       if (!sent) throw badRequest("the owner has no chat app to write to");
-      // Only Home moves, and only when the owner asked for it there (DECISIONS.md#d-224).
-      const at = stay && person === OWNER_ID && sent.thread === HOME_THREAD_ID ? sent.at : undefined;
-      const moved = Boolean(at && ctx.agent?.thread_id === HOME_THREAD_ID && askedByOwner(ctx.agent.run_id));
-      if (moved && at) moveHome(store, at);
-      return { ...(await withDelivery(sent)), ...(stay ? { moved } : {}) };
+      return withDelivery(sent);
     },
     // Open to agents like channels.message: their way to post in a public room for the owner.
     "channels.post": async ({ room, text, channel, files }, ctx) => {
@@ -219,8 +177,8 @@ export function channelHandlers(store: Store, channels: Channels, nudges: Pick<N
       }
       return { removed: true };
     },
-    "channels.outbox": ({ limit, channel }) => ({
-      items: store.channels.outbox.recent(limit, channel).map(publicOutbox),
+    "channels.outbox": ({ limit }) => ({
+      items: store.channels.outbox.recent(limit).map(publicOutbox),
     }),
 
     "notices.get": () => noticePrefs(store),
@@ -242,30 +200,14 @@ export function channelHandlers(store: Store, channels: Channels, nudges: Pick<N
       return { persons: store.persons.list() };
     },
     "contacts.set": ({ id, name, role, ...details }) => {
-      if (details.agent_id && !store.agents.get(details.agent_id)) throw notFound(`agent ${details.agent_id}`);
       if (!id) {
         if (role === "owner") throw badRequest("there is one owner");
         const created = store.persons.create({ name, role: role ?? "contact", note: details.note });
         return store.persons.update(created.id, details) ?? created;
       }
-      const before = store.persons.get(id);
-      if (before?.role === "owner" && details.agent_id)
-        throw badRequest("the owner is answered by each account's agent");
-      return store.tx(() => {
-        const p = store.persons.update(id, { name, ...(role ? { role } : {}), ...details });
-        if (!p) throw notFound(`person ${id}`);
-        // Their open chats follow a change of who answers them, on every channel.
-        if (before && before.agent_id !== p.agent_id) {
-          const configs = channels.info();
-          store.threads.movePerson(p.id, (channel) => {
-            const cfg = configs.find((c) => c.id === channel);
-            if (!cfg) return undefined;
-            const agent = contactAnswerer(store, cfg, p);
-            return { agent, project: agentProject(store, agent) };
-          });
-        }
-        return p;
-      });
+      const p = store.persons.update(id, { name, ...(role ? { role } : {}), ...details });
+      if (!p) throw notFound(`person ${id}`);
+      return p;
     },
     "contacts.suggestions.list": ({ state, person, limit }) => ({
       suggestions: store.suggestions.list({ state: state === "all" ? undefined : state, person, limit }),
@@ -281,62 +223,7 @@ export function channelHandlers(store: Store, channels: Channels, nudges: Pick<N
       if (id === OWNER_ID) throw badRequest("the owner cannot be removed");
       return { removed: store.persons.remove(id) };
     },
-    "contacts.never_read": async ({ person, channel, scope, undo }) => {
-      const cfg = channels.info().find((c) => c.id === channel);
-      if (!cfg?.email) throw badRequest("only an email account has a list of senders it never reads");
-      const who = store.persons.get(person);
-      const address = who?.addresses.find((a) => a.channel === channel)?.external_id;
-      if (!who || !address) throw notFound(`person ${person} on ${channel}`);
-      if (who.role === "owner") throw badRequest("your own addresses are always read");
-      const blocked = scope === "domain" ? `@${address.split("@")[1] ?? ""}` : address;
-      if (blocked === "@") throw badRequest(`${address} has no domain`);
-      const { token_set: _t, token_hint: _h, status: _s, error: _e, account: _a, qr: _q, id: _id, ...saved } = cfg;
-      const list = cfg.email.blocked ?? [];
-      const next = undo ? list.filter((x) => x !== blocked) : list.includes(blocked) ? list : [...list, blocked];
-      if (next.length !== list.length)
-        await channels.set(channel, { ...saved, email: { ...cfg.email, blocked: next } });
-      // Blocked, not forgotten: their card and chat stay, and the card can read them again.
-      store.persons.update(who.id, { role: undo ? "contact" : "blocked" });
-      return { blocked };
-    },
     "contacts.claim": ({ address }) => ({ moved: store.persons.giveToOwner(address) }),
-    "contacts.unclaim": ({ address }) => {
-      const mine = store.persons.owner().addresses.find((a) => a.id === address);
-      if (!mine) throw notFound(`address ${address} of yours`);
-      const cfg = channels.info().find((c) => c.id === mine.channel);
-      const signed = cfg && store.persons.seenOn(cfg.id, cfg.type).find((s) => s.address === mine.external_id)?.name;
-      // An address the owner typed carries the account's own label: their id says more than that.
-      const label = mine.label && mine.label !== cfg?.label ? mine.label : undefined;
-      const name = (signed ?? label ?? mine.external_id).slice(0, 80);
-      const person = store.persons.takeFromOwner(address, name);
-      if (!person) throw notFound(`address ${address} of yours`);
-      return person;
-    },
-    "contacts.seen": ({ channel }) => {
-      const cfg = channels.info().find((c) => c.id === channel);
-      if (!cfg) throw notFound(`channel ${channel}`);
-      return { seen: store.persons.seenOn(cfg.id, cfg.type) };
-    },
-    "contacts.keep": ({ channel, address, as, relation }) => {
-      const cfg = channels.info().find((c) => c.id === channel);
-      if (!cfg) throw notFound(`channel ${channel}`);
-      // Only an address that wrote here, exactly as the platform wrote it: nothing typed is trusted as someone's.
-      const seen = store.persons.seenOn(cfg.id, cfg.type).find((s) => s.address === address);
-      if (!seen) throw notFound(`nobody wrote from ${address} on ${cfg.label}`);
-      const holder = store.persons.byAddress(cfg.id, address);
-      if (holder)
-        throw conflict(`${address} on ${cfg.label} is already ${holder.role === "owner" ? "yours" : holder.name}`);
-      const id = store.tx(() => {
-        const who =
-          as === "owner"
-            ? store.persons.owner()
-            : store.persons.create({ name: seen.name.slice(0, 80), role: "contact", unreviewed: true });
-        store.persons.link(who.id, { channel: cfg.id, external_id: address, label: seen.name });
-        if (relation && who.role !== "owner") store.persons.update(who.id, { relation });
-        return who.id;
-      });
-      return store.persons.get(id) as NonNullable<ReturnType<typeof store.persons.get>>;
-    },
     "contacts.avatar": async ({ person }) => {
       if (!store.persons.get(person)) throw notFound(`person ${person}`);
       const media = await channels.avatar(person);
@@ -347,25 +234,14 @@ export function channelHandlers(store: Store, channels: Channels, nudges: Pick<N
       if (!cfg) throw notFound(`channel ${channel}`);
       const who = person ? store.persons.get(person) : store.persons.owner();
       if (!who) throw notFound(`person ${person}`);
-      const external = addressOn(cfg, address, who);
-      if (cfg.type === "email" && external === cfg.email?.address.toLowerCase())
-        throw badRequest(`${address} is this mailbox's own address: its mail is never read as anyone's`);
+      // A number without its country code is read in the contact's country, else the owner's.
+      const phones = [who, store.persons.owner()].flatMap((p) => p.addresses.flatMap((a) => phoneIn(a.external_id)));
+      const typed = typedAddress(cfg.type, address, phones.map(countryOf).find(Boolean));
+      if ("problem" in typed) throw badRequest(typed.problem);
+      const external = typed.external;
+      if (!external) throw badRequest(`"${address}" is not a ${cfg.label} address`);
       store.tx(() => store.persons.link(who.id, { channel, external_id: external, label: cfg.label }));
       return store.persons.get(who.id) as NonNullable<ReturnType<typeof store.persons.get>>;
-    },
-    "contacts.add": ({ channel, name, address }) => {
-      const cfg = channels.info().find((c) => c.id === channel);
-      if (!cfg) throw notFound(`channel ${channel}`);
-      const external = addressOn(cfg, address);
-      const holder = store.persons.byAddress(channel, external);
-      if (holder)
-        throw conflict(`${address} on ${cfg.label} is already ${holder.role === "owner" ? "yours" : holder.name}`);
-      const made = store.tx(() => {
-        const p = store.persons.create({ name, role: "contact" });
-        store.persons.link(p.id, { channel, external_id: external, label: cfg.label });
-        return p.id;
-      });
-      return store.persons.get(made) as NonNullable<ReturnType<typeof store.persons.get>>;
     },
 
     "pairing.list": () => ({
@@ -440,3 +316,4 @@ function otherAddress(type: string, typed: string): string | undefined {
   }
   return /^-?\d{3,20}$/.test(typed.trim()) ? typed.trim() : undefined;
 }
+const defaultLabel = (type: string) => CHANNEL_CATALOG[type as ChannelType]?.label ?? type;

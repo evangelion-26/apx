@@ -81,8 +81,8 @@ export function NoticePart({ part }: { part: NoticeData }) {
         </>
       }
     >
-      <div className="turn__notice-body apx-tree">
-        <p className="turn__notice-text">{text}</p>
+      <div className="turn__notice-body">
+        {text}
         {part.detail && <pre className="notice__detail">{part.detail}</pre>}
         {link}
       </div>

@@ -248,7 +248,6 @@ export interface JobsTable {
   started_at: string;
   ended_at: string | null;
   proc_start: string | null;
-  start_error: string | null;
 }
 
 export interface MediaTable {
@@ -491,7 +490,7 @@ export interface PersonsTable {
   perms: string | null;
   unreviewed: Generated<number>;
   supervised: Generated<number>;
-  agent_id: string | null;
+  any_hour: Generated<number>;
 }
 
 export interface ProjectsTable {
@@ -509,7 +508,6 @@ export interface ProjectsTable {
   autonomy: string | null;
   read_only_folders: string | null;
   context_chars: number | null;
-  parent_id: string | null;
 }
 
 export interface PromptTextsTable {
@@ -550,7 +548,6 @@ export interface RoutinesTable {
   anchor: Generated<number>;
   origin: string | null;
   max_steps: number | null;
-  autonomy: string | null;
 }
 
 export interface RunContextsTable {

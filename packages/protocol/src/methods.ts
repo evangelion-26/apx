@@ -1,12 +1,10 @@
 // Method registry: the single source of truth for what the core answers.
 // Adding a method = one entry here + one handler in apps/core/src/rpc. Every client gets the types for free.
 import { z } from "zod";
-import { activityReviewMethods } from "./activity-review.ts";
 import { appMethods } from "./app-methods.ts";
 import { artifactMethods } from "./artifact-methods.ts";
 import { asanaMethods } from "./asana-methods.ts";
 import { browserMethods } from "./browser.ts";
-import { channelMethods } from "./channel-methods.ts";
 import { desktopInstallMethods } from "./desktop-install.ts";
 import { deviceMethods } from "./device-methods.ts";
 import { emailSignatureMethods } from "./email-signatures.ts";
@@ -105,7 +103,6 @@ export const methods = {
   },
   ...browserMethods,
   ...appMethods,
-  ...channelMethods,
   ...artifactMethods,
   ...asanaMethods,
   ...deviceMethods,
@@ -119,7 +116,6 @@ export const methods = {
   ...telemetryMethods,
   ...usageMethods,
   ...storageMethods,
-  ...activityReviewMethods,
   ...instanceMethods,
   ...engineUsageMethods,
   ...emailSignatureMethods,

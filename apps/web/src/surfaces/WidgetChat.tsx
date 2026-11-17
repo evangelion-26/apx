@@ -1,4 +1,3 @@
-import "../styles/panel-parts.css";
 import type { SurfaceSummary } from "@apx/protocol";
 import { IconButton, Icons, Skeleton } from "@apx/ui";
 import { useEffect } from "react";
@@ -21,10 +20,10 @@ import { widgetChatOpen as open } from "./widgetChatOpen.ts";
  */
 export function WidgetChatHost() {
   const t = useT();
-  const { surfaceId, threadId, topic } = useSlice(open, (s) => s);
+  const { surfaceId, threadId } = useSlice(open, (s) => s);
   const surface = useData((s) => {
     if (surfaceId) return s.surfaces[surfaceId];
-    if (!threadId || topic) return undefined;
+    if (!threadId) return undefined;
     // Asking for one: the newest widget this chat has made.
     let made: SurfaceSummary | undefined;
     for (const x of Object.values(s.surfaces))
@@ -42,12 +41,12 @@ export function WidgetChatHost() {
     if (!surfaceId && surface && threadId) rememberChat(surface.id, threadId);
   }, [surface?.id]);
   if (!thread) return null;
-  const title = topic ?? surface?.title ?? t("widget.askTitle");
+  const title = surface?.title ?? t("widget.askTitle");
   return (
     <Drawer
       key={thread.id}
       className="widgetchat"
-      label={topic ?? t("widget.chatOf", { title })}
+      label={t("widget.chatOf", { title })}
       title={title}
       onClose={close}
       actions={
@@ -78,7 +77,7 @@ export function WidgetChatHost() {
         <div className="widgetchat__preview">
           <SurfaceFrame surfaceId={surface.id} maxHeight={420} />
         </div>
-      ) : topic ? null : (
+      ) : (
         <p className="widgetchat__waiting">
           <Icons.LayoutGrid size={14} />
           {t("widget.askWaiting")}

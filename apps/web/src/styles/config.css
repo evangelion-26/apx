@@ -95,9 +95,6 @@
   color: var(--apx-fg-muted);
   font-size: var(--apx-text-sm);
 }
-.config__hint.is-error {
-  color: var(--apx-danger);
-}
 .config__row {
   display: flex;
   gap: 10px;
@@ -155,7 +152,7 @@
 /* Engines */
 .engines {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 12px;
   margin-bottom: 24px;
 }
@@ -305,7 +302,7 @@
 /* ── Providers (model APIs) as cards ──────────────────────────────────────── */
 .pgrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(230px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
   gap: 12px;
   margin: 8px 0 24px;
 }

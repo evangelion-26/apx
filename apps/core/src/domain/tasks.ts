@@ -15,7 +15,6 @@ import { sql as raw } from "kysely";
 import type { Bus } from "../bus.ts";
 import type { TasksTable } from "../db/schema.ts";
 import { badRequest, notFound, unauthorized } from "../errors.ts";
-import { worksIn } from "./projects.ts";
 import { newId, now, opt, qb, type Sql } from "./sql.ts";
 import type { Store } from "./store.ts";
 
@@ -167,7 +166,7 @@ export function checkAssignee(store: Store, id: string | null | undefined, proje
   if (!id) return;
   const a = store.agents.get(id);
   if (!a) throw notFound(`agent ${id}`);
-  if (!worksIn(store.projects, a.project_id, project)) throw badRequest(`${a.name} works in another project`);
+  if (a.project_id && a.project_id !== project) throw badRequest(`${a.name} works in another project`);
 }
 
 /** A person by id or exact name (any case); never the owner or a blocked person, never a guess between two. */
@@ -192,14 +191,6 @@ export function checkSettle(t: Task, outcome: CommitmentOutcome | "renegotiated"
   dueOf(due_at);
 }
 
-/** Its agent first, then the others that took part, each once. */
-const tookPart = (assignee: string | null, agents: string | null): string[] => [
-  ...new Set([
-    ...(assignee ? [assignee] : []),
-    ...(JSON.parse(agents ?? "[]") as (string | null)[]).flatMap((a) => a ?? []),
-  ]),
-];
-
 /** Tasks with the name of their commitment's person. */
 const tasksQuery = () =>
   qb
@@ -214,19 +205,9 @@ const tasksQuery = () =>
         .whereRef("threads.task_id", "=", "tasks.id")
         .select((c) => c.fn.countAll<number>().as("n"))
         .as("chats"),
-    )
-    // Who took part: each chat's agent for it, and each teammate asked on its conversation (task-work.ts consult).
-    .select(
-      raw<
-        string | null
-      >`(select json_group_array(a) from (select distinct json_extract(t.agent_ids, '$[0]') as a from threads t where t.task_id = tasks.id or t.parent_id = tasks.thread_id))`.as(
-        "agents",
-      ),
     );
 
-const toTask = (
-  r: Selectable<TasksTable> & { person_name: string | null; chats: number | null; agents: string | null },
-): Task => ({
+const toTask = (r: Selectable<TasksTable> & { person_name: string | null; chats: number | null }): Task => ({
   id: r.id,
   ...opt("project_id", r.project_id),
   title: r.title,
@@ -259,7 +240,6 @@ const toTask = (
   ...(r.outcome === "kept" || r.outcome === "missed" || r.outcome === "dropped" ? { outcome: r.outcome } : {}),
   renegotiated: r.renegotiated,
   chats: Number(r.chats ?? 0),
-  agents: tookPart(r.assignee, r.agents),
   created_by: r.created_by,
   created_at: r.created_at,
   updated_at: r.updated_at,
@@ -329,20 +309,6 @@ export function tasksRepo({ one, all, run }: Sql, bus: Bus) {
         o.project_id === undefined ? q.where("project_id", "is", null) : q.where("project_id", "=", o.project_id);
       return Boolean(one(scoped.limit(1)));
     },
-    hasOpenTitle(title: string, project?: string | null): boolean {
-      return Boolean(
-        one(
-          qb
-            .selectFrom("tasks")
-            .select("id")
-            .where("state", "=", "open")
-            .where(raw<boolean>`lower(trim(title)) = lower(trim(${title}))`)
-            .$if(!!project, (q) => q.where("project_id", "=", project as string))
-            .$if(!project, (q) => q.where("project_id", "is", null))
-            .limit(1),
-        ),
-      );
-    },
     /** Newest activity first. `projects` limits to those projects (undefined in the list = tasks without one). */
     list(o: {
       projects?: Array<string | undefined>;
@@ -353,8 +319,6 @@ export function tasksRepo({ one, all, run }: Sql, bus: Bus) {
       parent?: string;
       from_thread?: string;
       limit: number;
-      exhaustive?: boolean;
-      after?: string;
     }): Task[] {
       let q = tasksQuery();
       if (o.projects) {
@@ -384,10 +348,6 @@ export function tasksRepo({ one, all, run }: Sql, bus: Bus) {
               .where(raw<string>`json_extract(task_events.data, '$.from_thread')`, "=", o.from_thread as string),
           ),
         );
-      if (o.exhaustive) {
-        if (o.after) q = q.where("tasks.id", ">", o.after);
-        return all(q.orderBy("tasks.id", "asc").limit(o.limit)).map(toTask);
-      }
       return all(q.orderBy("tasks.activity_at", "desc").limit(o.limit)).map(toTask);
     },
     create(t: {

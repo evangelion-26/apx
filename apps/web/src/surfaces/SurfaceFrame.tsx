@@ -1,4 +1,3 @@
-import "../styles/chat-cards.css";
 import type { SurfaceState } from "@apx/protocol";
 import { SURFACE_STATE_MAX, secureRequestKey } from "@apx/protocol/client";
 import { EmptyState, Icons, Skeleton, useApx } from "@apx/ui";

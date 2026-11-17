@@ -125,13 +125,7 @@ export function writeAgentFromTemplate(
   writeAtomic(file, join(setFields(front, fields), body));
 }
 
-export function updateAgentFile(
-  root: string,
-  slug: string,
-  fields: AgentFileFields,
-  prompt?: string,
-  beforeCommit?: () => void,
-): void {
+export function updateAgentFile(root: string, slug: string, fields: AgentFileFields, prompt?: string): void {
   const file = agentFile(root, slug);
   guard(root, file);
   const { front, body } = split(fs.readFileSync(file, "utf8"));
@@ -150,7 +144,7 @@ export function updateAgentFile(
     skills: fields.skills,
     aliases: fields.aliases,
   });
-  writeAtomic(file, join(next, prompt ?? body), undefined, beforeCommit);
+  writeAtomic(file, join(next, prompt ?? body));
 }
 
 /** Renames the file and adds the old slug to its `aliases`, so references written elsewhere still resolve. */

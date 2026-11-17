@@ -2,8 +2,7 @@
 // tab's native view laid over its slot, the same way the main window does it. Closing it brings the tab back.
 import { BaseWindow, type WebContents, WebContentsView } from "electron";
 
-/** `behind`: the tab keeps this place and size under the panel, so its page never lays out again for a cover. */
-export type Bounds = { x: number; y: number; width: number; height: number; behind?: boolean };
+export type Bounds = { x: number; y: number; width: number; height: number };
 
 export function createPopout(opts: {
   url: () => string;

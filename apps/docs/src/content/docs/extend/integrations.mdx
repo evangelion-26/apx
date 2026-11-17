@@ -28,8 +28,8 @@ and adds its MCP server as one of your global servers, so your agents can use it
 
 You can also let an agent bring it up: ask for something an app or channel you have not connected would do ("open
 my Figma file", "send it on WhatsApp") and the agent answers with a **Suggested connections** card. **Connect** opens
-that integration's form right in the chat, or that channel's setup in **Channels**. Once it is connected, from the
-card or anywhere else in APX within two days, the agent that offered it is told and goes on.
+that integration's form right in the chat, or that channel's setup in **Settings › Channels**; once an integration is
+connected, the agent is told and goes on.
 
 <Shot name="resources-integrations" alt="Resources, Integrations tab: connected integrations and the catalog of ones that can be connected" caption="Resources › Integrations" />
 
@@ -85,7 +85,7 @@ Each Google part connects on its own, so you choose what your agents reach: **Go
 | Google Drive | Write Docs and share them; find and read them. With your own client: find and read your whole Drive (Docs, Sheets, Slides, text files) | Sharing |
 
 APX's sign-in asks Google only for what it can get verified without a paid security review, so it cannot read your mail
-or the rest of your Drive. To read mail, connect your mailbox in **Channels › New channel › Email**; for the whole of Gmail and Drive,
+or the rest of your Drive. To read mail, connect your mailbox in **Channels › Email**; for the whole of Gmail and Drive,
 use your own OAuth client.
 
 **Remind me of my events**, under **Configure integration** on Google Calendar's page, tells you of each event shortly
@@ -94,11 +94,6 @@ link, in one line on your channel. All-day events and the ones you declined are 
 if it moves), and no model is called. **How often to look at the calendar** sets how often APX asks Google (every 5
 minutes by default, from 1 minute up to 24 hours), never less often than the lead time so no event slips between two
 looks. It is off until you turn it on; your quiet hours hold reminders until they end.
-
-An event you need no reminder of, such as a daily break, is turned off from its reminder in the notifications (bell)
-or the phone's Inbox: **Don't remind me of this event** stops it and every later date of a repeating event. You can
-also ask your super-agent. **Events I'm not reminded of**, in the same settings, lists them with **Remind me again**.
-A muted event never reaches your channel or an agent, so it spends no tokens.
 
 **Tell me about new mail**, under **Configure integration** on Gmail's page, has APX look at what reached your inbox
 (**How often to check**: every 5 minutes by default, from 1 minute up to 24 hours). Ads, social and mailing lists are
@@ -149,10 +144,6 @@ a value to you, and each row says where it's used.
 A variable can have a value **only for one project**. In that project's chats, your MCP servers use it instead of the
 global one (the row says **Over the global**). Use it when a project needs a different account, like a client's
 GitHub token.
-
-To move a variable to another project, or to every project, edit it and change **Available in**: its value goes with
-it, so you don't type it again (leave **Value** empty to keep it). Servers find it by name in its new place; where it
-is no longer available they stop finding it. If the other place already has a variable with that name, nothing moves.
 
 ### From the terminal
 

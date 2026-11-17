@@ -1,5 +1,5 @@
 import type { Agent } from "@apx/protocol";
-import { AgentAvatar, Button, ContextMenu, IconButton, Icons, Menu, SegmentedControl, Tabs } from "@apx/ui";
+import { AgentAvatar, Button, ContextMenu, EmptyState, IconButton, Icons, Menu, SegmentedControl, Tabs } from "@apx/ui";
 import { type ReactNode, useMemo, useState } from "react";
 import { AgentModelPicker } from "../config/models/AgentModelPicker.tsx";
 import { PROFILE_KEY } from "../data/engines.ts";
@@ -10,7 +10,6 @@ import { updateAgent } from "../data/team.ts";
 import { type T, useT } from "../i18n/index.ts";
 import { startChat } from "../inbox/NewChatMenu.tsx";
 import { go } from "../shell/nav.ts";
-import { ProjectEmpty } from "./ProjectEmpty.tsx";
 import { ProjectOrg } from "./ProjectOrg.tsx";
 import { AgentDetail } from "./team/AgentDetail.tsx";
 import { DeleteAgentDialog, NewAgentDialog } from "./team/AgentDialogs.tsx";
@@ -130,7 +129,9 @@ function ProjectTeam({ project, switcher }: { project: ProjectEntry; switcher?: 
       </div>
 
       {team.length === 0 ? (
-        <ProjectEmpty name={project.name} />
+        <EmptyState variant="dashed" size="lg" icon={<Icons.Users />}>
+          {t("team.empty")}
+        </EmptyState>
       ) : mode === "list" ? (
         <ul className="team__list" aria-label={t("overview.agents")}>
           {team.map((a) => (

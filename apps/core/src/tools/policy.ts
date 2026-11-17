@@ -8,7 +8,6 @@ import {
   ToolRisk,
 } from "@apx/protocol";
 import type { AgentRecord } from "../domain/agents.ts";
-import { inheritsFrom } from "../domain/projects.ts";
 import type { Store } from "../domain/store.ts";
 import { worksInFolder } from "../domain/threads.ts";
 import { SUPER_AGENT_TOOLS } from "./agent-set.ts";
@@ -112,30 +111,25 @@ const BRIDGE = new Set(["mcp_search", "mcp_call"]);
 
 /**
  * `untrusted` is whether text from outside (web pages, other agents, channel messages) is in the turn's context:
- * then a model may be acting on someone else's instructions, so strong actions wait for the owner. `level`: the
- * call's own, unless the executor found it acts only on this computer (DECISIONS.md#d-212).
+ * then a model may be acting on someone else's instructions, so strong actions wait for the owner.
  */
-export function authorize(
-  tool: Tool,
-  args: Record<string, unknown>,
-  agent: AgentRecord,
-  untrusted: boolean,
-  level: Confirm = tool.confirm(args),
-): Decision {
+export function authorize(tool: Tool, args: Record<string, unknown>, agent: AgentRecord, untrusted: boolean): Decision {
   // Plan mode still asks the owner, loads skills and hands reading work to a helper (who works in plan mode too).
   if (modeOf(agent) === "plan" && PLAN_KEEPS.has(tool.name) && agent.rules?.[toolRisk(tool)] !== "off")
     return { kind: "allow" };
+  const level = tool.confirm(args);
   // Its own temp files change nothing of the owner's: no mode asks for them, only what always asks still does.
   if (tool.scratch?.(args)) return decide(level === "always" ? "always" : "never", "none", agent, untrusted);
   // A call that only reads here is risk read whatever the tool may do otherwise (DECISIONS.md#d-098).
   const d = decide(level, tool.reads?.(args) ? "none" : tool.effect, agent, untrusted, tool.workspace);
-  // What keeps its card is asked in every mode and under every rule (DECISIONS.md#d-143, DECISIONS.md#d-203).
+  // What the owner set up changes on their card alone: no mode or rule of the agent's skips it (DECISIONS.md#d-140,
+  // DECISIONS.md#d-143), nor what keeps its card in Total.
   const keeps = keepsCard(tool, args, agent);
   if (d.kind === "allow" && keeps)
     return {
       kind: "confirm",
       why: "always",
-      reason: keeps === "card" ? "this change always waits for you" : KEPT_CARD,
+      reason: keeps === "card" ? "a change to what you set up always waits for you" : KEPT_CARD,
     };
   // The tool names what outside content could do through this call, so the card says it (DECISIONS.md#d-121).
   return d.kind === "confirm" && d.why === "untrusted" && level === "untrusted" && tool.untrustedWhy
@@ -147,7 +141,7 @@ const KEPT_CARD = "it waits for you whatever the agent's mode, unless you said a
 
 /** Whether Total or the agent's rule `auto` would skip a card this call keeps (DECISIONS.md#d-143). */
 export const keepsCard = (tool: Tool, args: Record<string, unknown>, agent: AgentRecord): KeepsCard | undefined =>
-  tool.keepsCard?.(args, agent);
+  tool.ownerSetting?.(args) ? "card" : tool.keepsCard?.(args, agent);
 
 const URL_DATA = "the URL carries data, and content from outside (web, another agent or a message) is in this turn";
 
@@ -229,18 +223,12 @@ export function reachOf(agent: AgentRecord): Reach {
   return "read";
 }
 
-/**
- * An agent with no autonomy of its own goes as far as its project says (the base project's, for a global one); a
- * subproject that says nothing goes as its parent does.
- */
+/** An agent with no autonomy of its own goes as far as its project says (the base project's, for a global one). */
 export function withProjectAutonomy(store: Store, agent: AgentRecord): AgentRecord {
   if (agent.autonomy) return agent;
-  const base = () => store.settings.read("base_project").autonomy;
-  const from = inheritsFrom(store.projects, agent.project_id);
   const of = agent.project_id
-    ? (store.projects.get(agent.project_id)?.autonomy ??
-      (from ? (from.project ? store.projects.get(from.project)?.autonomy : base()) : undefined))
-    : base();
+    ? store.projects.get(agent.project_id)?.autonomy
+    : store.settings.read("base_project").autonomy;
   return of ? { ...agent, autonomy: of } : agent;
 }
 

@@ -21,30 +21,6 @@ Un agente tiene nombre, cara, rol, instrucciones y herramientas que puede usar. 
 opciones, otro implementar un cambio y otro revisarlo. Son roles que configurás, no una promesa de que el trabajo
 salga bien sin revisión. Empezá desde la pestaña **Agentes** del proyecto para crear uno o importar una plantilla.
 
-## Revisá los agentes después de un cambio
-
-Desde la 2.14, APX incluye una sola guía nativa, **apx-agents**, para crear, editar, clonar, importar y revisar
-agentes. Los pedidos existentes de `apx-agent-prompts` cargan esa misma guía; no hay una segunda copia activa.
-Pedile a tu super-agente que revise un agente en su proyecto de destino, especialmente después de copiarlo desde
-otro equipo. Los datos compartidos del proyecto van en AGENTS.md, no en instrucciones reutilizables que arrastren
-rutas o personas de otro proyecto.
-
-APX agrupa los agentes modificados en avisos de revisión. Cubre creación, edición, clonación e importación internas,
-y cambios externos en `.apc/agents/*.md` de proyectos registrados cuando el observador del proyecto los indexa.
-No recorre cualquier Markdown ni carpetas sin registrar. Los agentes existentes se toman como punto de partida al
-iniciar el detector por primera vez; los cambios posteriores, incluidos los encontrados después de reiniciar,
-quedan pendientes de revisión. Un aviso significa que la definición cambió, no que APX encontró un error. No se
-llama a un modelo por cada guardado y el aviso nunca bloquea el trabajo.
-
-Pedí «Revisá mis agentes modificados, sin editarlos». El super-agente usa `agent_set` con `review: true`, revisa tandas
-chicas en contexto y propone un antes y después. Vos elegís qué aplicar. Los cambios revisados usan la revisión leída
-antes de la propuesta: instrucciones o contexto más nuevos generan un conflicto en vez de sobrescribirse. Una
-actualización revisada resuelve su pendiente; un cambio posterior abre otro. APX vuelve a comprobar la revisión
-después de preparar el reemplazo del archivo, justo antes de guardarlo. Es protección de concurrencia optimista, no
-un bloqueo exclusivo sobre editores externos: evitá guardar ese mismo archivo mientras aplicás una revisión. Si no hay nada que corregir, el
-super-agente puede marcarlo como revisado con tu acuerdo. La revisión es pasiva por defecto: guardar un archivo no
-dispara una reescritura autónoma ni una revisión semántica en segundo plano.
-
 ## Conservá el contexto junto al trabajo
 
 Los proyectos de APX siguen [APC (Agent Project Context)](/es/concepts/projects/): un `AGENTS.md` en la raíz y una carpeta
@@ -135,7 +111,7 @@ and follow up until they close. When a decision needs the owner, ask once, clear
 | `description` | Para qué está el agente. También se pone delante de las instrucciones cuando el cuerpo no lo dice. |
 | `icon` | El blobo del agente (`orbita`, `menta`, `cobalto`…). |
 | `emoji` | Un emoji opcional que se guarda con el agente (los archivos de otras herramientas suelen traer uno). |
-| `parent` | El agente al que reporta, por su slug (o su id completo). Si no está, reporta a Home. APX le dice al agente a quién responde y su `area`, así sus instrucciones nunca necesitan nombrar personas. |
+| `parent` | El agente al que reporta, por su slug (o su id completo). Si no está, reporta a Home. |
 | `area` | El área a la que pertenece, para el organigrama (`product`, `engineering`…). |
 | `autonomy` | Su modo de permisos: `manual`, `auto` (por defecto), `accept_edits`, `plan` o `total`. Mirá [Autonomía y seguridad](/es/concepts/autonomy/). |
 | `personality` | Cómo suena, aparte de lo que hace. Hasta 1.000 caracteres. |
@@ -200,8 +176,7 @@ Cambiá campos con pares `clave=valor` (`name`, `role`, `slug`, `parent`, `blob`
 
 <Terminal command="apx agents set 3f9a1c0d7e21-vera parent=lucia blob=cobalto">{`Vera (3f9a1c0d7e21-vera) · vera · Marketing`}</Terminal>
 
-Archivá uno. Su archivo pasa a `.apc/agents/.archived/` (nunca se borra) y sus chats quedan. Un agente que responde
-un canal se archiva recién cuando elegís quién responde ese canal en su lugar:
+Archivá uno. Su archivo pasa a `.apc/agents/.archived/` (nunca se borra) y sus chats quedan:
 
 <Terminal command="apx agents archive 3f9a1c0d7e21-vera">{`archived; file moved to ~/work/acme-store/.apc/agents/.archived/vera.md`}</Terminal>
 
@@ -227,11 +202,6 @@ La pestaña **Agentes** dibuja tu equipo de dos maneras:
 
 - **Jerarquía**: un árbol armado con el `parent:` de cada agente. Los que no tienen parent reportan a Home.
 - **Áreas y roles**: los agentes agrupados por su `area:`, con las áreas y roles del proyecto.
-
-Las instrucciones de un agente son para su oficio: cómo trabaja y qué revisa. A quién responde y qué puede publicar lo
-dice APX. Para revisar que ninguna instrucción de tus agentes siga frenando el trabajo (personas nombradas como jefes,
-"no pushees salvo autorización", aprobaciones que tiene que dar un revisor), pedile a tu super-agente "Revisá las
-instrucciones de mis agentes": te dice qué cambiaría en cada uno y no cambia nada hasta que digas que sí.
 
 <Shot name="org" alt="La vista Areas and roles: áreas Product, Engineering y Growth con sus roles y agentes" caption="Agentes › Áreas y roles" />
 
@@ -262,20 +232,11 @@ Pedirle otra vez a un ayudante con el mismo nombre desde el mismo chat sigue en 
 recibió al principio; si todavía está trabajando, la nueva pregunta queda aparte.
 
 La respuesta vuelve en el mismo turno si es rápida, o más tarde como un turno nuevo que despierta a quien la pidió. El
-chat muestra una fila con lo pedido, el avance y cuánto tardó; un clic en ella despliega el informe completo, con el
-acceso al chat del agente delegado al pie.
+chat muestra una tarjeta con el avance, el informe completo (plegado hasta que lo abrís) y cuánto tardó.
 
-Escribirle de nuevo a una sesión que todavía trabaja en un pedido anterior le llega en su próximo paso, dentro del
-trabajo en curso, como tus propias palabras cuando apretás Enter: una "pausa" o un cambio de plan se aplica enseguida
-en vez de esperar a que ese trabajo termine, y vuelve una sola respuesta para los dos. Varias tareas dadas a la misma
-sesión a la vez siguen esperando su turno.
-
-Un agente al que le delegan no contesta "ya voy" primero: hace el trabajo hasta donde llegan sus herramientas y
-responde una sola vez, terminando siempre con las mismas cuatro líneas (Status: done, partial o blocked, Result,
-Evidence: lo que mostraron sus herramientas, Unblock: lo que necesita, o none). Partial es que hizo una parte y dice
-qué falta; blocked, que ya no hay nada a su alcance, como un acceso, un login o una decisión tuya, después de
-intentarlo. Nunca le devuelve la tarea a quien se la pidió. En su propia tarea un agente no reporta así: la tarea, la
-respuesta de un compañero o una revisión que le llega ahí es trabajo con el que sigue hasta cerrarla. Con vos, los agentes contestan
+Un agente al que le delegan no contesta "ya voy" primero: hace el trabajo y responde una sola vez, terminando
+siempre con las mismas cuatro líneas (Status: done o blocked, Result, Evidence: lo que mostraron sus herramientas,
+Unblock: lo que necesita, o none). Nunca le devuelve la tarea a quien se la pidió. Con vos, los agentes contestan
 directo, sin repetir tu pregunta.
 
 Cuando un agente le pide algo a dos o más ayudantes en el mismo turno, sus respuestas le llegan juntas: cada tarjeta

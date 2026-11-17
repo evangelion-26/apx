@@ -76,7 +76,6 @@ function Fixture() {
       h(Switch, { label: "Locked", checked: true, disabled: true }),
       h(SegmentedControl, {
         label: "View",
-        disabled: !on,
         options: [
           { value: "list", label: "List" },
           { value: "board", label: "Board" },

@@ -19,7 +19,6 @@ export function TaskPeek() {
     <TaskPanel
       key={task.id}
       task={task}
-      peek
       onClose={() => nav.set({ peekTaskId: undefined })}
       actions={
         <IconButton

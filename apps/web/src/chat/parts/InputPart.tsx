@@ -1,5 +1,3 @@
-import "../../styles/chat-cards.css";
-import "../../styles/panel-parts.css";
 import "../../styles/screens.css";
 import type { ApprovalScope, FileChange, Part } from "@apx/protocol";
 import { ActionGroup, Button, Icons, MarkdownView } from "@apx/ui";
@@ -85,7 +83,7 @@ function SettledInput({ part, state }: { part: InputPartData; state: Exclude<Inp
         </>
       }
     >
-      <div className="inputline__body apx-tree">
+      <div className="inputline__body">
         <Prompt part={part} />
         <Detail part={part} />
         {part.answer && part.kind === "confirm" && <p className="inputcard__answer">“{part.answer}”</p>}

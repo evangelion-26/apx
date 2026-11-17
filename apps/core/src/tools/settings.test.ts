@@ -37,7 +37,7 @@ test("only the super-agent is offered apx_settings", async () => {
 test("reading what it can change, the contacts and a method's fields asks nobody", async () => {
   // No args is an index by area, short enough to read every time; an area lists what each method does.
   const index = (await h.ask({})).answer;
-  assert.match(index, /^- contacts: list, set, remove, address, never_read, claim$/m);
+  assert.match(index, /^- contacts: list, set, remove, address, claim$/m);
   assert.match(index, /^- memory: .*set_settings/m);
   assert.ok(index.length < 2_000, `the index is ${index.length} chars`);
   const list = (await h.ask({ method: "contacts" })).answer;
@@ -61,8 +61,8 @@ test("the contacts read narrows by name and says when the list is cut", async ()
   assert.match((await h.ask({ method: "contacts.list", params: { query: "nobody" } })).answer, /no contact matches/);
 });
 
-test("in Manual, the owner approves who a contact is and how to answer them, read before and after", async () => {
-  const { answer, detail } = await h.inMode("manual", () => h.ask(tellHer(), "approve"));
+test("the owner approves who a contact is and how to answer them, read before and after", async () => {
+  const { answer, detail } = await h.ask(tellHer(), "approve");
   assert.match(detail, /^Change the contact Northwind Sister/);
   assert.match(detail, /note: \(none\) → "My sister"/);
   assert.match(detail, /rules: \(none\) → "Answer warmly, in Spanish\."/);
@@ -83,31 +83,9 @@ test("a change to what already is so asks nobody and changes nothing", async () 
 
 test("a declined change saves nothing", async () => {
   await h.env.client.call("contacts.set", { id: northwind, name: "Northwind Sister", note: "", rules: "" });
-  await h.inMode("manual", () => h.ask(tellHer(), "deny"));
+  await h.ask(tellHer(), "deny");
   const p = await sister();
   assert.ok(!p?.rules && !p?.note);
-});
-
-test("in Auto, a contact the owner asks for changes at once; their own profile still asks (DECISIONS.md#d-203)", async () => {
-  await h.env.client.call("contacts.set", { id: northwind, name: "Northwind Sister", note: "", rules: "" });
-  const { answer } = await h.ask(tellHer());
-  assert.match(answer, /^done: - Northwind Sister/);
-  assert.equal((await sister())?.note, "My sister");
-  const { detail } = await h.ask({ method: "owner.set", params: { name: "Acme Owner" } }, "deny");
-  assert.match(detail, /name: .* → "Acme Owner"/);
-});
-
-test("on Total, what the owner asks for runs, but an address of their own keeps its card (DECISIONS.md#d-203)", async () => {
-  await h.inMode("total", async () => {
-    const { answer } = await h.ask({ method: "owner.set", params: { about: "Runs Acme" } });
-    assert.match(answer, /^done/);
-    const mine = { method: "contacts.address", params: { channel: "telegram-1", address: "+15550100" } };
-    const { detail } = await h.ask(mine, "deny");
-    assert.match(detail, /^Add \+15550100 on .* to you/);
-    const making = { method: "contacts.set", params: { id: northwind, role: "owner" } };
-    assert.match((await h.ask(making, "deny")).detail, /^Change the contact Northwind Sister/);
-    assert.equal((await sister())?.role, "contact");
-  });
 });
 
 test("a change the method would refuse, or a method out of reach, never reaches the owner", async () => {

@@ -3,7 +3,7 @@ import type { ApxMode } from "@apx/ui";
 import type { ChannelKind } from "../channels/kinds.ts";
 import { createStore, useSlice } from "../data/createStore.ts";
 import { rememberSidebar } from "../data/prefs.ts";
-import { type ProjectTab, projectTabFrom } from "./projectTabs.ts";
+import type { MessageKey } from "../i18n/index.ts";
 
 export type PanelKind =
   | "computer"
@@ -14,7 +14,6 @@ export type PanelKind =
   | "widget"
   | "usage"
   | "agent"
-  | "agents"
   | "processes"
   | "document";
 
@@ -24,13 +23,24 @@ type View =
   | "app"
   | "tasks"
   | "flows"
-  | "routines"
   | "resources"
   | "files"
   | "computers"
-  | "channels"
   | "channel"
   | "engine";
+
+export const PROJECT_TABS = [
+  { id: "overview", label: "project.tab.overview" },
+  { id: "chats", label: "project.tab.chats" },
+  { id: "team", label: "project.tab.team" },
+  { id: "tasks", label: "project.tab.tasks" },
+  { id: "routines", label: "project.tab.routines" },
+  { id: "artifacts", label: "project.tab.artifacts" },
+  { id: "files", label: "project.tab.files" },
+  { id: "memory", label: "project.tab.memory" },
+  { id: "resources", label: "project.tab.resources" },
+] as const satisfies readonly { id: string; label: MessageKey }[];
+export type ProjectTab = (typeof PROJECT_TABS)[number]["id"];
 
 export const CONFIG_SECTIONS = [
   "account",
@@ -44,8 +54,8 @@ export const CONFIG_SECTIONS = [
   "memory",
   "voices",
   "images",
+  "channels",
   "interruptions",
-  "activity-review",
   "browser",
   "desktop",
   "devices",
@@ -60,22 +70,12 @@ export type ConfigSection = (typeof CONFIG_SECTIONS)[number];
 export const RESOURCE_TABS = ["skills", "mcp", "integrations", "variables", "extensions"] as const;
 export type ResourceTab = (typeof RESOURCE_TABS)[number];
 
-/** The parts of a channel account's settings. */
-export type AccountPane = "account" | "behavior" | "stickers" | "rooms" | "contacts" | "approvals" | "activity";
-
-/** A channel account's settings open over the screen: an existing one (`id`) or a new one of `kind` being set up. */
-export type AccountEdit = { kind: ChannelKind; id: string | undefined; pane: AccountPane };
-
 export type NavState = {
   view: View;
   /** Project open in the project view (also scopes its chat list). */
   projectId: string | undefined;
   projectTab: ProjectTab;
   threadId: string | undefined;
-  /** The routine whose runs are open in the Inbox as one chat (instead of a thread). */
-  routineId: string | undefined;
-  /** A saved contact with no chat yet, open in the Inbox narrowed to their account (instead of a thread). */
-  contactId: string | undefined;
   appId: string | undefined;
   panel: PanelKind | null;
   /** The side panel takes half the chat area (files, changes, a terminal), instead of its usual column. */
@@ -95,10 +95,8 @@ export type NavState = {
   tools: boolean;
   /** Config modal section, or null when closed. */
   config: ConfigSection | null;
-  /** "New channel": the kinds to pick from, open over the screen. */
-  channelPick: boolean;
-  /** A channel account's settings, open over the screen. */
-  channelEdit: AccountEdit | null;
+  /** The channel kind shown in Config › Channels (connected or being set up). */
+  configChannel: ChannelKind | undefined;
   /** "Open on your phone" dialog. */
   phone: boolean;
   /** The usage dialog (memory, CPU, disk; the computer's and APX's). */
@@ -109,9 +107,6 @@ export type NavState = {
   listInFront: boolean;
   /** Tab of Resources (global, and inside a project). */
   resourcesTab: ResourceTab;
-  /** The variable picked on Resources › Variables (a link from where it is used), and the project it belongs to. */
-  variable: string | undefined;
-  variableIn: string | undefined;
   /** The channel open in the channel view, and the contact's chat picked in it. */
   channelId: string | undefined;
   channelThread: string | undefined;
@@ -153,11 +148,11 @@ const PANELS: readonly PanelKind[] = [
   "changes",
   "widget",
   "usage",
-  "agents",
   "processes",
   "document",
 ];
-const VIEWS: readonly string[] = ["tasks", "flows", "routines", "resources", "files", "computers", "channels"];
+const TAB_IDS: readonly string[] = PROJECT_TABS.map((t) => t.id);
+const VIEWS: readonly string[] = ["tasks", "flows", "resources", "files", "computers"];
 
 /** Deep links: #thread=<id>&panel=<kind>, #app=<id>, #project=<id>&tab=<tab>, #view=tasks&task=<id>. */
 function fromHash(): Partial<NavState> {
@@ -170,9 +165,6 @@ function fromHash(): Partial<NavState> {
   const channel = h.get("channel");
   return {
     ...(h.get("thread") ? { threadId: h.get("thread") ?? undefined } : {}),
-    ...(h.get("routine")
-      ? { view: "inbox" as const, routineId: h.get("routine") ?? undefined, threadId: undefined }
-      : {}),
     ...(h.get("task") ? { taskId: h.get("task") ?? undefined } : {}),
     ...(panel && (PANELS as readonly string[]).includes(panel) ? { panel: panel as PanelKind } : {}),
     panelDocument: panel === "document" ? (h.get("document") ?? undefined) : undefined,
@@ -181,17 +173,10 @@ function fromHash(): Partial<NavState> {
       ? {
           view: "project" as const,
           projectId: project,
-          projectTab: projectTabFrom(tab),
+          projectTab: (tab && TAB_IDS.includes(tab) ? tab : "overview") as ProjectTab,
         }
       : {}),
     ...(view && VIEWS.includes(view) ? { view: view as View } : {}),
-    ...(h.get("variable")
-      ? {
-          resourcesTab: "variables" as const,
-          variable: h.get("variable") ?? undefined,
-          variableIn: h.get("variable_in") ?? undefined,
-        }
-      : {}),
     ...(view === "flows"
       ? {
           flowProject: h.get("scope") ?? undefined,
@@ -215,8 +200,6 @@ export const nav = createStore<NavState>({
   projectId: undefined,
   projectTab: "overview",
   threadId: "home",
-  routineId: undefined,
-  contactId: undefined,
   appId: undefined,
   panel: null,
   panelWide: false,
@@ -230,15 +213,12 @@ export const nav = createStore<NavState>({
   mode: initialMode(),
   tools: true,
   config: null,
-  channelPick: false,
-  channelEdit: null,
+  configChannel: undefined,
   phone: false,
   usageDialog: false,
   palette: false,
   listInFront: false,
   resourcesTab: "skills",
-  variable: undefined,
-  variableIn: undefined,
   channelId: undefined,
   channelThread: undefined,
   engineId: undefined,
@@ -259,8 +239,6 @@ const PLACE = [
   "projectId",
   "projectTab",
   "threadId",
-  "routineId",
-  "contactId",
   "appId",
   "channelId",
   "channelThread",
@@ -272,8 +250,6 @@ const PLACE = [
   "flowTables",
   "flowTable",
   "resourcesTab",
-  "variable",
-  "variableIn",
   "listInFront",
   "panel",
   "panelWide",
@@ -328,12 +304,6 @@ function applyPlace(place: Place): void {
   syncHist();
 }
 
-function variableHash(s: NavState, h: URLSearchParams): void {
-  if (s.resourcesTab !== "variables" || !s.variable) return;
-  h.set("variable", s.variable);
-  if (s.variableIn) h.set("variable_in", s.variableIn);
-}
-
 nav.subscribe(() => {
   const s = nav.get();
   const h = new URLSearchParams();
@@ -343,15 +313,12 @@ nav.subscribe(() => {
     h.set("tab", s.projectTab);
     if (s.projectTab === "chats" && s.threadId) h.set("thread", s.threadId);
     if (s.projectTab === "tasks" && s.taskId) h.set("task", s.taskId);
-    if (s.projectTab === "resources") variableHash(s, h);
   } else if (
     s.view === "tasks" ||
     s.view === "flows" ||
-    s.view === "routines" ||
     s.view === "resources" ||
     s.view === "files" ||
-    s.view === "computers" ||
-    s.view === "channels"
+    s.view === "computers"
   ) {
     h.set("view", s.view);
     if (s.view === "flows" && s.flowProject) h.set("scope", s.flowProject);
@@ -360,15 +327,13 @@ nav.subscribe(() => {
     if (s.view === "flows" && !s.flowId && s.flowTables) h.set("tab", "tables");
     if (s.view === "flows" && !s.flowId && s.flowTables && s.flowTable) h.set("table", s.flowTable);
     if (s.view === "tasks" && s.taskId) h.set("task", s.taskId);
-    if (s.view === "resources") variableHash(s, h);
   } else if (s.view === "channel" && s.channelId) {
     h.set("channel", s.channelId);
     if (s.channelThread) h.set("chat", s.channelThread);
   } else if (s.view === "engine" && s.engineId) {
     h.set("engine", s.engineId);
     if (s.threadId) h.set("thread", s.threadId);
-  } else if (s.view === "inbox" && s.routineId) h.set("routine", s.routineId);
-  else if (s.threadId) h.set("thread", s.threadId);
+  } else if (s.threadId) h.set("thread", s.threadId);
   if (s.panel && showsChat(s)) h.set("panel", s.panel);
   if (s.panel === "document" && showsChat(s) && s.panelDocument) h.set("document", s.panelDocument);
   if (s.panel === "widget" && showsChat(s) && s.panelWidget) h.set("widget", s.panelWidget);
@@ -387,12 +352,6 @@ nav.subscribe(() => {
   shownThread = s.threadId;
   shownPanel = s.panel;
   if (left) nav.set({ panel: null });
-});
-
-// A contact picked before they have a chat gives way to whatever opens next: a chat, a routine, another screen.
-nav.subscribe(() => {
-  const s = nav.get();
-  if (s.contactId && (s.threadId || s.routineId || s.view !== "inbox")) nav.set({ contactId: undefined });
 });
 
 // A deep link followed in place (a link in a message, the address bar); replaceState above never fires this.
@@ -447,8 +406,8 @@ export const go = {
   thread(threadId: string) {
     nav.set((s) =>
       s.view === "project" && s.projectTab === "chats"
-        ? { threadId, routineId: undefined, listInFront: false }
-        : { view: "inbox", threadId, routineId: undefined, listInFront: false },
+        ? { threadId, listInFront: false }
+        : { view: "inbox", threadId, listInFront: false },
     );
   },
   /** A new chat just made takes the place of the empty one it was, wherever it is open; back skips the empty one. */
@@ -467,15 +426,7 @@ export const go = {
   },
   /** Always the Inbox, whatever is open (running pill, deep links). */
   inboxThread(threadId: string) {
-    nav.set({ view: "inbox", threadId, routineId: undefined, listInFront: false });
-  },
-  /** A saved contact with no chat yet, beside the account's list in the Inbox: their card and a field to write. */
-  contact(personId: string) {
-    nav.set({ view: "inbox", contactId: personId, threadId: undefined, routineId: undefined, listInFront: false });
-  },
-  /** A routine's runs as one chat in the Inbox. */
-  routine(routineId: string) {
-    nav.set({ view: "inbox", routineId, threadId: undefined, panel: null, listInFront: false });
+    nav.set({ view: "inbox", threadId, listInFront: false });
   },
   /** Phone width: back from a chat to the chat list. */
   showList() {
@@ -521,7 +472,7 @@ export const go = {
   tables(flowProject?: string, flowTable?: string) {
     nav.set({ view: "flows", flowProject, flowId: undefined, flowEdit: false, flowTables: true, flowTable });
   },
-  view(view: "tasks" | "routines" | "resources" | "files" | "computers" | "channels") {
+  view(view: "tasks" | "resources" | "files" | "computers") {
     nav.set({ view });
   },
   /** A task: beside a tasks list when one is open, else over the current screen (a chat, a notice…). */
@@ -538,40 +489,19 @@ export const go = {
   resources(tab: ResourceTab, global = false) {
     nav.set((s) =>
       s.view === "project" && !global
-        ? { projectTab: "resources", resourcesTab: tab, variable: undefined, variableIn: undefined }
-        : { view: "resources", resourcesTab: tab, variable: undefined, variableIn: undefined },
+        ? { projectTab: "resources", resourcesTab: tab }
+        : { view: "resources", resourcesTab: tab },
     );
   },
   resourcesTab(tab: ResourceTab) {
-    nav.set({ resourcesTab: tab, variable: undefined, variableIn: undefined });
-  },
-  /**
-   * Resources › Variables with one variable found and picked: in the open project's Resources tab when a project is
-   * open, else the global screen. `project`: the project whose own value it is (none: the global one).
-   */
-  variable(name: string, project?: string) {
-    nav.set((s) => ({
-      ...(s.view === "project" ? { projectTab: "resources" as const } : { view: "resources" as const }),
-      resourcesTab: "variables" as const,
-      variable: name,
-      variableIn: project,
-    }));
+    nav.set({ resourcesTab: tab });
   },
   config(section: ConfigSection | null = "account") {
     nav.set({ config: section });
   },
-  /** "New channel": pick the kind; with `kind`, the setup of a new account of it right away. */
-  newChannel(kind?: ChannelKind) {
-    nav.set(
-      kind ? { channelPick: false, channelEdit: { kind, id: undefined, pane: "account" } } : { channelPick: true },
-    );
-  },
-  /** A channel account's settings, on one of its parts. */
-  channelSettings(kind: ChannelKind, id: string, pane: AccountPane = "account") {
-    nav.set({ channelPick: false, channelEdit: { kind, id, pane } });
-  },
-  closeChannelDialogs() {
-    nav.set({ channelPick: false, channelEdit: null });
+  /** Config › Channels on one kind: its settings, or its setup when it is not connected yet. */
+  channelConfig(kind: ChannelKind) {
+    nav.set({ config: "channels", configChannel: kind });
   },
   palette(open: boolean) {
     nav.set({ palette: open });
@@ -586,10 +516,7 @@ export const go = {
   agent(agentId: string) {
     nav.set({ panel: "agent", panelAgent: agentId });
   },
-  /**
-   * A sub-chat beside the open chat, in its agents; with no chat open (Tasks, a task over the screen) it opens as a
-   * chat itself.
-   */
+  /** A sub-chat beside the open chat; with no chat open (Tasks, a task over the screen) it opens as a chat itself. */
   subthread(thread: string) {
     nav.set((s) => {
       const chat =
@@ -599,14 +526,9 @@ export const go = {
         (s.view === "project" && s.projectTab === "chats");
       if (!chat || !s.threadId || s.peekTaskId)
         return { view: "inbox", threadId: thread, peekTaskId: undefined, panel: null, listInFront: false };
-      return { panel: "agents", panelThread: thread, panelParent: s.threadId, listInFront: false };
+      return { panel: "processes", panelThread: thread, panelParent: s.threadId, listInFront: false };
     });
   },
-  /** The agents the open chat called (its delegated conversations). */
-  agents() {
-    nav.set({ panel: "agents", panelThread: undefined, panelParent: undefined });
-  },
-  /** The commands the open chat's agent ran. */
   processes() {
     nav.set({ panel: "processes", panelThread: undefined, panelParent: undefined });
   },

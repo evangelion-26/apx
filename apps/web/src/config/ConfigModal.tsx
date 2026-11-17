@@ -5,11 +5,11 @@ import { type MessageKey, useT } from "../i18n/index.ts";
 import { MoveSection } from "../lazy.ts";
 import { LAYOUT } from "../shell/layout.ts";
 import { type ConfigSection, go, useNav } from "../shell/nav.ts";
-import { ActivityReviewSection } from "./ActivityReviewSection.tsx";
 import { AdvancedSection } from "./AdvancedSection.tsx";
 import { AgentsSection } from "./AgentsSection.tsx";
 import { ApiTokensSection } from "./ApiTokensSection.tsx";
 import { BrowserSection } from "./BrowserSection.tsx";
+import { ChannelsSection } from "./ChannelsSection.tsx";
 import { DesktopSection } from "./DesktopSection.tsx";
 import { DevicesSection } from "./DevicesSection.tsx";
 import { EnginesSection } from "./EnginesSection.tsx";
@@ -51,8 +51,8 @@ const GROUPS: { label: MessageKey; items: NavEntry[] }[] = [
     items: [
       { id: "agents", label: "config.agents", icon: <Icons.Bot /> },
       { id: "profile", label: "config.superagent", icon: <Icons.Crown /> },
+      { id: "channels", label: "config.channels", icon: <Icons.MessageCircle /> },
       { id: "interruptions", label: "config.interruptions", icon: <Icons.BellOff /> },
-      { id: "activity-review", label: "config.activityReview", icon: <Icons.Sparkles /> },
     ],
   },
   {
@@ -167,8 +167,8 @@ function Body({ section }: { section: ConfigSection }) {
       return <ServicesSection kind="speech" />;
     case "images":
       return <ServicesSection kind="image" />;
-    case "activity-review":
-      return <ActivityReviewSection />;
+    case "channels":
+      return <ChannelsSection />;
     case "interruptions":
       return <InterruptionsSection />;
     case "profile":

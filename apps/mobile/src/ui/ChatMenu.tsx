@@ -17,7 +17,6 @@ export function ChatMenu({
   onClose,
   onApps,
   onSwitch,
-  onBrowser,
   onRead,
   update,
   remove,
@@ -26,8 +25,6 @@ export function ChatMenu({
   onClose: () => void;
   onApps?: () => void;
   onSwitch?: () => void;
-  /** What its agents may do in the browser for this chat, and taking it back. */
-  onBrowser?: () => void;
   /** Marks it read; offered only while it has unread messages. */
   onRead?: () => Promise<void>;
   update: (patch: ThreadPatch) => Promise<void>;
@@ -101,7 +98,6 @@ export function ChatMenu({
           ),
       onApps ? item("apps", "LayoutGrid", () => dismiss(onApps)) : null,
       onSwitch ? item("switchChat", "MessageCircle", () => dismiss(onSwitch)) : null,
-      onBrowser ? item("browserPermissions", "Globe", () => dismiss(onBrowser)) : null,
       thread.kind === "home"
         ? null
         : item(

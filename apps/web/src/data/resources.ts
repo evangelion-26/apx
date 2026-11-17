@@ -6,13 +6,12 @@ import { notify } from "./notices.ts";
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-type FailureOptions = { quiet?: boolean; onError?(error: unknown): void };
+type FailureOptions = { quiet?: boolean };
 
 async function attempt<T>(work: () => Promise<T>, options: FailureOptions = {}): Promise<T | undefined> {
   try {
     return await work();
   } catch (e) {
-    options.onError?.(e);
     if (!options.quiet) notify(t("res.error", { error: errText(e) }));
     return undefined;
   }
@@ -46,8 +45,8 @@ export const importSkills = (source: SkillImportSource, pick: string[], replace:
 export const toggleSkill = (name: string, on: boolean, project?: string) =>
   attempt(() => client.call("skills.toggle", { name, on, ...scoped(project) }));
 
-export const listMcp = (project?: string, options?: FailureOptions) =>
-  attempt(async () => (await client.call("mcp.list", scoped(project))).servers, options);
+export const listMcp = (project?: string) =>
+  attempt(async () => (await client.call("mcp.list", scoped(project))).servers);
 
 export const toggleMcp = (project: string, server: string, on: boolean) =>
   attempt(async () => (await client.call("mcp.toggle", { project, server, on })).servers);
@@ -79,26 +78,18 @@ export type McpDraft = {
   url?: string;
   headers?: Record<string, string>;
   enabled?: boolean;
-  project?: string | null;
-  /** A global server: the projects it is turned off in. */
-  off_in?: string[];
 };
 
 /** Adds or replaces one of the owner's servers (or, with `project`, one in its .apc/mcps.json); null removes it. */
 export const setMcp = (name: string, server: McpDraft | null, project?: string) =>
   attempt(async () => (await client.call("mcp.set", { name, server, ...(project ? { project } : {}) })).servers);
 
-export const listSecrets = (project?: string, options?: FailureOptions) =>
-  attempt(async () => (await client.call("secrets.list", scoped(project))).secrets, options);
+export const listSecrets = () => attempt(async () => (await client.call("secrets.list", {})).secrets);
 
 /** Stores (or with null removes) a variable; its value never comes back to the panel. */
 /** `project`: that project's own value, over the global one there. */
 export const setSecret = (name: string, value: string | null, project?: string) =>
   attempt(() => client.call("secrets.set", { name, value, ...(project ? { project } : {}) }));
-
-/** Moves a stored variable to another project's own (or, without `to`, to the global ones); the value stays in the core. */
-export const moveSecret = (name: string, project: string | undefined, to: string | undefined) =>
-  attempt(() => client.call("secrets.move", { name, to: to ?? null, ...(project ? { project } : {}) }));
 
 export type { McpServerStatus, SecretInfo, SkillCandidate, SkillImportSource, SkillInfo };
 
@@ -120,18 +111,15 @@ export const mcpPermissions = (s: McpServerStatus, project?: string) =>
 export const approveMcpTool = (s: McpServerStatus, tool: string, project?: string) =>
   attempt(() => client.call("mcp.approveTool", { scope: s.scope, server: s.name, tool, ...scoped(project) }));
 
-/** "all": every tool, those the server adds later too; "ask": none. A server setting: it needs no running server. */
+/** Uses the same current contracts as individual toggles; a failure stops the batch and shows a notice. */
 export const setMcpToolMode = (s: McpServerStatus, mode: "ask" | "all", project?: string) =>
   attempt(async () => {
-    await client.call("mcp.toolMode", { scope: s.scope, server: s.name, mode, ...scoped(project) });
-    return { ok: true };
-  });
-
-/** Only these tools, picked one by one (new ones will ask); a failure stops the batch and shows a notice. */
-export const pickMcpTools = (s: McpServerStatus, tools: string[], project?: string) =>
-  attempt(async () => {
-    await client.call("mcp.toolMode", { scope: s.scope, server: s.name, mode: "ask", ...scoped(project) });
-    for (const tool of tools)
-      await client.call("mcp.approveTool", { scope: s.scope, server: s.name, tool, ...scoped(project) });
+    const { tools, error } = await client.call("mcp.tools", { scope: s.scope, server: s.name, ...scoped(project) });
+    if (error) throw new Error(error);
+    for (const tool of tools) {
+      if (mode === "all" && !tool.approved)
+        await client.call("mcp.approveTool", { scope: s.scope, server: s.name, tool: tool.name, ...scoped(project) });
+      if (mode === "ask" && tool.approved) await client.call("tools.revoke", { key: tool.key });
+    }
     return { ok: true };
   });

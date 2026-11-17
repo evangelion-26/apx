@@ -1,4 +1,3 @@
-import "../styles/panel-parts.css";
 import type { SurfaceSummary } from "@apx/protocol";
 import { IconButton, Icons, Menu } from "@apx/ui";
 import { type DragEvent, useCallback, useMemo, useState } from "react";
@@ -9,7 +8,7 @@ import { useT } from "../i18n/index.ts";
 import { SurfaceActions } from "../surfaces/SurfaceActions.tsx";
 import { SurfaceFrame } from "../surfaces/SurfaceFrame.tsx";
 import { useBoardChoices } from "./boardMenu.tsx";
-import { BoardAddTile, BoardEmpty, gridColumns, TILE_H, TileHeight, TileWidth } from "./boardParts.tsx";
+import { BoardAddTile, gridColumns, TILE_H, TileHeight, TileWidth } from "./boardParts.tsx";
 
 const NO_BOARD = {
   order: [] as string[],
@@ -98,13 +97,6 @@ export function ProjectBoard({ projectId }: { projectId: string }) {
     if (over !== id) setOver(id);
   };
 
-  if (!tiles.length)
-    return (
-      <section className="projboard projboard--empty" aria-label={t("board.title")}>
-        <BoardEmpty choices={choices} />
-      </section>
-    );
-
   return (
     <section className={`overview__block projboard${board.wide ? " is-wide" : ""}`} aria-label={t("board.title")}>
       <div className="projboard__bar">
@@ -191,7 +183,7 @@ export function ProjectBoard({ projectId }: { projectId: string }) {
             </article>
           );
         })}
-        <BoardAddTile choices={choices} />
+        <BoardAddTile choices={choices} empty={!tiles.length} />
       </div>
     </section>
   );

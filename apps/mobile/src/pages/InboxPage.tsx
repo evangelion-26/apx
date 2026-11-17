@@ -17,7 +17,6 @@ export function InboxPage({
   respond,
   rerun,
   continueSession,
-  muteEvent,
 }: {
   data: Workspace;
   items: InboxItem[];
@@ -26,14 +25,12 @@ export function InboxPage({
   respond: (input: string, response: Answer) => Promise<void>;
   rerun: (routine: string) => Promise<void>;
   continueSession: (session: string) => Promise<void>;
-  muteEvent: (series: string, title: string) => Promise<void>;
 }) {
   const act = async (item: InboxItem, action: InboxAction) => {
     if (action.kind === "approve")
       await respond(action.input, { decision: "approve", ...(action.scope ? { scope: action.scope } : {}) });
     if (action.kind === "rerun") await rerun(action.routine);
     if (action.kind === "continue") await continueSession(action.session);
-    if (action.kind === "muteEvent") await muteEvent(action.series, action.title);
     if (item.notice) await read(item.notice);
     if (action.kind === "open" && action.thread) open(action.thread);
   };
@@ -103,7 +100,6 @@ function InboxCard({
       {item.quote ? <Text style={s.quote}>{item.quote}</Text> : null}
       <View style={s.actions}>
         <Button
-          size="sm"
           label={t(item.primary.label)}
           busy={busy === "primary"}
           disabled={Boolean(busy)}
@@ -112,7 +108,6 @@ function InboxCard({
         {(item.more ?? []).map((m) => (
           <Button
             key={m.label}
-            size="sm"
             label={t(m.label)}
             variant="secondary"
             busy={busy === m.label}
@@ -120,17 +115,13 @@ function InboxCard({
             onPress={() => press(m.label, m.action)}
           />
         ))}
-        {/* A notice with no chat to open has one thing to do: one button, not the same one twice. */}
-        {item.secondary.label === item.primary.label ? null : (
-          <Button
-            size="sm"
-            label={t(item.secondary.label)}
-            variant="secondary"
-            busy={busy === "secondary"}
-            disabled={Boolean(busy)}
-            onPress={() => press("secondary", item.secondary.action)}
-          />
-        )}
+        <Button
+          label={t(item.secondary.label)}
+          variant="secondary"
+          busy={busy === "secondary"}
+          disabled={Boolean(busy)}
+          onPress={() => press("secondary", item.secondary.action)}
+        />
       </View>
     </Card>
   );
@@ -158,5 +149,5 @@ const useStyles = makeStyles((theme) => ({
     fontSize: 14,
     overflow: "hidden",
   },
-  actions: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  actions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
 }));

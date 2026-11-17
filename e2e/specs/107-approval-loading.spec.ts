@@ -1,18 +1,7 @@
-import type { Page } from "@playwright/test";
 import { expect, open, rpc, test } from "./kit.ts";
 
-/** Settings › Browser, where the pages agents may run JavaScript on are listed. */
-async function openBrowserSettings(page: Page, spanish: boolean) {
-  await page.getByRole("button", { name: spanish ? /^Cuenta/ : /^Account/ }).click();
-  await page.getByRole("menuitem", { name: spanish ? /^Configuración(?! inicial)/ : /^Settings/ }).click();
-  await page
-    .getByRole("dialog", { name: spanish ? "Configuración" : "Settings" })
-    .getByRole("button", { name: spanish ? "Navegador" : "Browser", exact: true })
-    .click();
-}
-
 for (const failed of [false, true]) {
-  test(`open browser permissions unmount while their new language ${failed ? "fails" : "loads"}`, async ({
+  test(`an open permissions dialog unmounts while its new language ${failed ? "fails" : "loads"}`, async ({
     page,
   }, info) => {
     await rpc("setup.finish", {});
@@ -42,60 +31,63 @@ for (const failed of [false, true]) {
         await route.fulfill({ contentType: "application/javascript", body: 'throw new Error("Options unavailable");' });
       else await route.continue();
     });
-    await open(page);
+    await open(page, "#view=resources");
     try {
       await page.getByRole("button", { name: /^Account/ }).click();
-      await page.getByRole("menuitem", { name: /^Language/ }).hover();
+      await page.getByRole("menuitem", { name: "Language", exact: true }).hover();
       await page.getByRole("menuitem", { name: "Español", exact: true }).click();
-      await openBrowserSettings(page, false);
-      await expect(page.getByRole("region", { name: "JavaScript on pages" })).toBeVisible();
+      await page.getByRole("button", { name: "Active browser permissions", exact: true }).click();
+      await expect(page.getByRole("dialog")).toBeVisible();
       releaseBase();
-      await expect(page.getByRole("status").filter({ hasText: "Cargando permisos de JavaScript…" })).toBeVisible();
-      await expect(page.getByRole("region", { name: /JavaScript on pages|JavaScript en páginas/ })).toHaveCount(0);
-      await page.screenshot({ path: info.outputPath("open-permissions-language-loading.png"), fullPage: true });
+      await expect(page.getByRole("status").filter({ hasText: "Cargando permisos del navegador…" })).toBeVisible();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Refresh permissions", exact: true })).toHaveCount(0);
+      await page.screenshot({ path: info.outputPath("open-dialog-language-loading.png"), fullPage: true });
     } finally {
       releaseBase();
       releasePack();
     }
     if (failed) {
-      const alert = page.getByRole("alert").filter({ hasText: "No se pudieron mostrar los permisos de JavaScript" });
+      const alert = page.getByRole("alert").filter({ hasText: "No se pudieron mostrar los permisos del navegador" });
       await expect(alert).toBeVisible();
-      await expect(page.getByRole("region", { name: "JavaScript en páginas" })).toHaveCount(0);
-      await page.screenshot({ path: info.outputPath("open-permissions-language-failure.png"), fullPage: true });
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await page.screenshot({ path: info.outputPath("open-dialog-language-failure.png"), fullPage: true });
       fail = false;
       await alert.getByRole("button", { name: "Reintentar", exact: true }).click();
-      await openBrowserSettings(page, true);
     }
-    const region = page.getByRole("region", { name: "JavaScript en páginas" });
-    await expect(region).toBeVisible();
-    await expect(region).not.toContainText("res.browser");
+    await page.getByRole("button", { name: "Permisos activos del navegador", exact: true }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(
+      page.getByRole("dialog").getByRole("button", { name: "Actualizar permisos", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole("dialog")).not.toContainText("res.browser");
   });
 }
 
 for (const language of ["en", "es"] as const) {
-  for (const screen of ["settings", "question"] as const) {
+  for (const screen of ["resources", "question"] as const) {
     test(`${screen} keeps approval loading and failure visible in ${language}, then recovers`, async ({
       page,
     }, info) => {
       const spanish = language === "es";
       await page.setViewportSize({ width: spanish ? 390 : 1280, height: 900 });
       const loading =
-        screen === "settings"
+        screen === "resources"
           ? spanish
-            ? "Cargando permisos de JavaScript…"
-            : "Loading JavaScript permissions…"
+            ? "Cargando permisos del navegador…"
+            : "Loading browser permissions…"
           : spanish
             ? "Cargando opciones…"
             : "Loading options…";
       const failure =
-        screen === "settings"
+        screen === "resources"
           ? spanish
-            ? "No se pudieron mostrar los permisos de JavaScript. Recargá para volver a intentarlo."
-            : "Could not show JavaScript permissions. Reload to try again."
+            ? "No se pudieron mostrar los permisos del navegador. Recargá para volver a intentarlo."
+            : "Could not show browser permissions. Reload to try again."
           : spanish
             ? "No se pudieron mostrar estas opciones. Recargá para volver a intentarlo."
             : "These options could not be shown. Reload to try again.";
-      const permissions = spanish ? "JavaScript en páginas" : "JavaScript on pages";
+      const permissions = spanish ? "Permisos activos del navegador" : "Active browser permissions";
       await rpc("setup.finish", {});
       await page.addInitScript((language) => {
         localStorage.setItem("apx.prefs", JSON.stringify({ language }));
@@ -111,7 +103,7 @@ for (const language of ["en", "es"] as const) {
         await held;
         await route.fulfill({ contentType: "application/javascript", body: 'throw new Error("Options unavailable");' });
       });
-      let hash = "";
+      let hash = "#view=resources";
       if (screen === "question") {
         const chat = await rpc<{ id: string }>("threads.create", {
           kind: "loose",
@@ -122,11 +114,10 @@ for (const language of ["en", "es"] as const) {
         await rpc("threads.send", { thread: chat.id, text: "ask me which days" });
       }
       await open(page, hash);
-      if (screen === "settings") await openBrowserSettings(page, spanish);
       try {
         await expect(page.getByRole("status").filter({ hasText: loading })).toBeVisible();
         await expect(page.locator(".inputcard")).toHaveCount(0);
-        await expect(page.getByRole("region", { name: permissions })).toHaveCount(0);
+        await expect(page.getByRole("button", { name: permissions, exact: true })).toHaveCount(0);
       } finally {
         release();
       }
@@ -136,9 +127,9 @@ for (const language of ["en", "es"] as const) {
       await expect(page.locator(".inputcard")).toHaveCount(0);
       fail = false;
       await alert.getByRole("button", { name: spanish ? "Reintentar" : "Retry", exact: true }).click();
-      if (screen === "settings") {
-        await openBrowserSettings(page, spanish);
-        await expect(page.getByRole("region", { name: permissions })).toBeVisible();
+      if (screen === "resources") {
+        await page.getByRole("button", { name: permissions, exact: true }).click();
+        await expect(page.getByRole("dialog")).toBeVisible();
       } else {
         const card = page.locator(".inputcard.is-pending");
         await expect(card).toContainText("Which days work for the Northwind review?");
@@ -146,7 +137,11 @@ for (const language of ["en", "es"] as const) {
         await card.getByRole("button", { name: "Monday", exact: true }).click();
         await expect(card.getByRole("button", { name: spanish ? "Enviar" : "Send", exact: true })).toBeEnabled();
       }
-      if (screen === "settings") await page.keyboard.press("Escape");
+      if (screen === "resources")
+        await page
+          .getByRole("dialog")
+          .getByRole("button", { name: spanish ? "Cerrar" : "Close", exact: true })
+          .click();
       const nextLanguage = spanish ? "en" : "es";
       let releaseLanguage!: () => void;
       const heldLanguage = new Promise<void>((resolve) => {
@@ -157,30 +152,32 @@ for (const language of ["en", "es"] as const) {
         await route.continue();
       });
       await page.getByRole("button", { name: spanish ? /^Cuenta/ : /^Account/ }).click();
-      await page.getByRole("menuitem", { name: spanish ? /^Idioma/ : /^Language/ }).hover();
+      await page.getByRole("menuitem", { name: spanish ? "Idioma" : "Language", exact: true }).hover();
       await page.getByRole("menuitem", { name: spanish ? "English" : "Español", exact: true }).click();
-      if (screen === "settings") await openBrowserSettings(page, !spanish);
       try {
         await expect(
           page.getByRole("status").filter({
             hasText:
-              screen === "settings"
+              screen === "resources"
                 ? spanish
-                  ? "Loading JavaScript permissions…"
-                  : "Cargando permisos de JavaScript…"
+                  ? "Loading browser permissions…"
+                  : "Cargando permisos del navegador…"
                 : spanish
                   ? "Loading options…"
                   : "Cargando opciones…",
           }),
         ).toBeVisible();
         await expect(page.locator(".inputcard")).toBeHidden();
-        await expect(page.getByRole("region", { name: permissions })).toBeHidden();
+        await expect(page.getByRole("button", { name: permissions, exact: true })).toBeHidden();
       } finally {
         releaseLanguage();
       }
-      if (screen === "settings") {
+      if (screen === "resources") {
         await expect(
-          page.getByRole("region", { name: spanish ? "JavaScript on pages" : "JavaScript en páginas" }),
+          page.getByRole("button", {
+            name: spanish ? "Active browser permissions" : "Permisos activos del navegador",
+            exact: true,
+          }),
         ).toBeVisible();
       } else {
         const card = page.locator(".inputcard.is-pending");

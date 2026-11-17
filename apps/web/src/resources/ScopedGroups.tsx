@@ -22,11 +22,6 @@ export function useInheritance(projectId: string | undefined, kind: "skills" | "
   return { on, set };
 }
 
-/** Rows of a Resources list, the same spacing everywhere: globally, and in each group inside a project. */
-export function ResourceRows({ children }: { children: ReactNode }) {
-  return <div className="resv__rows">{children}</div>;
-}
-
 /**
  * A project's resources in two parts: its own (always shown, with a word when there are none) and the owner's global
  * ones under a switch that decides whether this project takes them at all (left out with `ownOnly`).
@@ -55,7 +50,7 @@ export function ScopedGroups<T>({
         <div className="resv__grouptitle">
           {ownTitle} <span>{own.length}</span>
         </div>
-        {own.length ? <ResourceRows>{own.map(render)}</ResourceRows> : <p className="resv__groupempty">{emptyOwn}</p>}
+        {own.length ? own.map(render) : <p className="resv__groupempty">{emptyOwn}</p>}
       </div>
       {!ownOnly && (
         <div className={`resv__group${inherit.on === false ? " is-off" : ""}`}>
@@ -72,7 +67,7 @@ export function ScopedGroups<T>({
             />
           </div>
           {inherit.on === false && <p className="resv__groupempty">{t("res.globalsOffHere")}</p>}
-          {globals.length > 0 && <ResourceRows>{globals.map(render)}</ResourceRows>}
+          {globals.map(render)}
         </div>
       )}
     </>

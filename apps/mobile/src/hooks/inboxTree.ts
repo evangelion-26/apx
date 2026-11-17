@@ -1,14 +1,9 @@
 import { textOrder } from "../format.ts";
 import type { Thread } from "./useWorkspace";
 
-/**
- * A row of the chat list. A `task` or `routine` row is its most recent chat (`thread`); its other chats, and the
- * sessions under the latest one, are its `children`. A `channel` row is one channel account (`ref`): `thread` is its
- * most recent chat and every chat on it is a child.
- */
 export type InboxNode = {
   key: string;
-  kind: "thread" | "task" | "routine" | "channel";
+  kind: "thread" | "task" | "routine";
   ref: string;
   thread: Thread;
   children: InboxNode[];
@@ -28,22 +23,10 @@ export type InboxFilter = {
   agents?: readonly string[];
   /** The archived chats instead of the others. */
   archived?: boolean;
-  /** Channel accounts whose chats are left out. */
-  hiddenChannels?: readonly string[];
-  /** Each channel account's chats under one row. */
-  byChannel?: boolean;
 };
 
-/**
- * Project filtering precedes parenting: a session whose parent is unavailable stays reachable as a root. A task's own
- * chat (`tasks`' `thread_id`) joins the task's row once something was said in it; until then the board shows it.
- */
-export function inboxTree(
-  threads: Thread[],
-  options: InboxFilter,
-  tasks: readonly { id: string; thread_id?: string | undefined }[] = [],
-): InboxNode[] {
-  const taskOf = new Map(tasks.flatMap((task) => (task.thread_id ? [[task.thread_id, task.id] as const] : [])));
+/** Project filtering precedes parenting: a session whose parent is unavailable stays reachable as a root. */
+export function inboxTree(threads: Thread[], options: InboxFilter): InboxNode[] {
   const all = new Map(threads.map((thread) => [thread.id, thread]));
   const under = (thread: Thread, is: (item: Thread) => boolean): boolean => {
     const seen = new Set<string>();
@@ -56,15 +39,12 @@ export function inboxTree(
     return false;
   };
   const agents = options.agents?.length ? new Set(options.agents) : undefined;
-  const hidden = new Set(options.hiddenChannels ?? []);
   const nodes = new Map<string, InboxNode>();
   for (const thread of threads) {
     if (Boolean(thread.archived) !== Boolean(options.archived)) continue;
-    if (thread.kind === "task" && !thread.task_id && !thread.preview.trim()) continue;
     if (!options.routines && under(thread, (item) => item.kind === "routine")) continue;
     if (options.tasks === false && under(thread, (item) => item.kind === "task" || Boolean(item.task_id))) continue;
     if (agents && !thread.agent_ids.some((id) => agents.has(id))) continue;
-    if (thread.channel && hidden.has(thread.channel.id)) continue;
     if (
       options.project !== "all" &&
       (options.project === "default" ? !!thread.project_id : thread.project_id !== options.project)
@@ -99,35 +79,22 @@ export function inboxTree(
         ? node.thread.routine_id
           ? "routine"
           : undefined
-        : (node.thread.task_id ?? taskOf.get(node.thread.id))
+        : node.thread.task_id
           ? "task"
           : undefined;
-    const ref = kind === "routine" ? node.thread.routine_id : (node.thread.task_id ?? taskOf.get(node.thread.id));
+    const ref = kind === "routine" ? node.thread.routine_id : node.thread.task_id;
     if (!kind || !ref) {
-      const account = options.byChannel ? node.thread.channel?.id : undefined;
-      if (!account) {
-        result.push(node);
-        continue;
-      }
-      const key = `channel:${account}`;
-      const bundle = bundles.get(key);
-      if (bundle) bundle.children.push(node);
-      else {
-        const head: InboxNode = { key, kind: "channel", ref: account, thread: node.thread, children: [node] };
-        bundles.set(key, head);
-        result.push(head);
-      }
+      result.push(node);
       continue;
     }
     const key = `${kind}:${ref}`;
-    // Roots come newest first: the first chat of a task or routine is its row, the later ones nest under it.
-    const bundle = bundles.get(key);
-    if (bundle) bundle.children.push(node);
-    else {
-      const head: InboxNode = { key, kind, ref, thread: node.thread, children: [...node.children] };
-      bundles.set(key, head);
-      result.push(head);
+    let bundle = bundles.get(key);
+    if (!bundle) {
+      bundle = { key, kind, ref, thread: node.thread, children: [] };
+      bundles.set(key, bundle);
+      result.push(bundle);
     }
+    bundle.children.push(node);
   }
   const sort = (list: InboxNode[]) => {
     list.sort(recent);
@@ -137,10 +104,8 @@ export function inboxTree(
   return result;
 }
 
-/** Every chat a row holds; a channel's row is only its chats (its `thread` is one of them). */
 export function nodeThreads(node: InboxNode): Thread[] {
-  const children = node.children.flatMap(nodeThreads);
-  return node.kind === "channel" ? children : [node.thread, ...children];
+  return [...(node.kind === "thread" ? [node.thread] : []), ...node.children.flatMap(nodeThreads)];
 }
 
 /** A matching descendant keeps its ancestors; a matching header keeps its entire subtree. */
@@ -152,7 +117,8 @@ export function searchInbox(
   const words = query?.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean) ?? [];
   if (!words.length) return nodes;
   return nodes.flatMap((node) => {
-    const hay = `${title(node)} ${node.thread.title} ${node.thread.preview}`.toLocaleLowerCase();
+    const hay =
+      `${title(node)} ${node.kind === "thread" ? `${node.thread.title} ${node.thread.preview}` : ""}`.toLocaleLowerCase();
     if (words.every((word) => hay.includes(word))) return [node];
     const children = searchInbox(node.children, query, title);
     return children.length ? [{ ...node, children }] : [];

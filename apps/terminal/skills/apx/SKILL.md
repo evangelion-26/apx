@@ -87,7 +87,6 @@ apx tasks say <id> <text…>                    # comment; @agent asks that agen
 
 apx routines                                  # scheduled work and when it runs next
 apx routines add <name> <prompt…> --agent a (--cron "30 8 * * 1-5" | --every 60 | --at <ISO date>)
-apx routines edit <id> --autonomy total        # how its runs act: manual|auto|total, default = its agent's mode
 apx routines run|on|off|rm|log <id>
 
 apx memory [words]                            # notes agents keep between threads (newest, or best matches)
@@ -102,9 +101,7 @@ Memory is for durable, curated facts, not transcripts.
 ```bash
 apx projects | projects register <folder> | projects sync [project]
 apx projects create "<Name>" [--path <folder>] [--kind company|software|…] [--desc "…"]   # no --path: a folder in APX's home
-apx projects create "<Name>" --parent <project>|base   # a subproject: works with its parent's agents, own memory
 apx projects set <project> [--name "…"] [--kind …] [--desc "…"] [--autonomy manual|auto|accept_edits|plan|total]
-apx projects detach <project>                          # a subproject becomes a project of its own
 apx projects folders list|add|rm <project> [folder]   # folders its agents may read and never change
 apx agents new <slug> "<Name>" [--project <id>] [--role "<role>"]
 apx agents set <agent> name=… role=…          # project agents are written to .apc/agents/<slug>.md

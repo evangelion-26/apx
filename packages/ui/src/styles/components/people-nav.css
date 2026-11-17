@@ -9,10 +9,6 @@
   line-height: 1;
   user-select: none;
 }
-/* Initials are capitals: trimmed to their cap height they sit in the circle's optical centre, not above it. */
-.apx-avatar--initials > span {
-  text-box: trim-both cap alphabetic;
-}
 .apx-avatar__img {
   width: 100%;
   height: 100%;
@@ -270,13 +266,11 @@ button.apx-agentchip:hover {
   position: absolute;
   top: 5px;
   right: 9px;
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  /* A dark ring between the dot and what is under it, then APX green: something new there. */
-  box-sizing: border-box;
-  border: 2px solid var(--apx-bg);
-  background: var(--apx-brand);
+  background: var(--apx-danger);
+  box-shadow: 0 0 0 2px var(--apx-sidebar);
 }
 .apx-nav__count {
   font-size: var(--apx-text-xs);

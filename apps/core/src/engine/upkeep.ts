@@ -88,7 +88,7 @@ export function titleFromText(text: string): string | undefined {
 }
 
 /** The model log as plain text for the summarizer: who said what, tool calls and their results, shortened. */
-export function transcriptOf(items: ChatItem[], max = TRANSCRIPT_CHARS): string {
+function transcriptOf(items: ChatItem[]): string {
   const lines = items.map((m) => {
     if (m.role === "user") return `Owner/context: ${m.content}`;
     if (m.role === "tool") return `Tool result: ${m.content.slice(0, 800)}`;
@@ -99,7 +99,7 @@ export function transcriptOf(items: ChatItem[], max = TRANSCRIPT_CHARS): string 
     return "";
   });
   const text = lines.filter(Boolean).join("\n\n");
-  return text.length > max ? `[…]\n${text.slice(-max)}` : text;
+  return text.length > TRANSCRIPT_CHARS ? `[…]\n${text.slice(-TRANSCRIPT_CHARS)}` : text;
 }
 
 type Group = { run: string | undefined; entries: LogEntry[]; size: number };

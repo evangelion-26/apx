@@ -11,7 +11,6 @@ import {
   ProfileInfo,
   Routine,
   RoutineAction,
-  RoutineAutonomy,
   RoutineRun,
   Schedule,
   Task,
@@ -55,17 +54,9 @@ export const officeMethods = {
         commitments: z.boolean().optional(),
         person: Id.optional(),
         limit: z.number().int().min(1).max(500).default(200),
-        /** Stable ID order for traversing all matching tasks, rather than the recent-activity summary. */
-        exhaustive: z.boolean().optional(),
-        after: Id.optional(),
       })
       .strict(),
-    result: z.object({
-      tasks: z.array(Task),
-      columns: z.array(TaskColumn),
-      next_cursor: Id.nullable().optional(),
-      truncated: z.boolean().optional(),
-    }),
+    result: z.object({ tasks: z.array(Task), columns: z.array(TaskColumn) }),
     effect: false,
   },
   "tasks.get": {
@@ -239,8 +230,6 @@ export const officeMethods = {
         anchor: z.boolean().optional(),
         /** Model calls each run may make. Absent keeps what the routine had; null goes back to the default. */
         max_steps: z.number().int().min(5).max(200).nullable().optional(),
-        /** How its runs act. Absent keeps what the routine had; null goes back to the agent's own mode. */
-        autonomy: RoutineAutonomy.nullable().optional(),
         enabled: z.boolean().default(true),
       })
       .strict(),

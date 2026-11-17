@@ -6,7 +6,6 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   type AgentRules,
-  BASE_PROJECT_ID,
   INSTANCE_FORMAT,
   INSTANCE_MAX_BYTES,
   INSTANCE_VERSION,
@@ -324,12 +323,8 @@ function planChannels(deps: ImportDeps, file: InstanceFile, c: Ctx) {
   const { store } = deps;
   const { push, skip, mine, agents, agentOf } = c;
   for (const ch of file.channels) {
-    const want = {
-      ...ch,
-      agent_id: agentOf(ch.agent_id),
-      ...(ch.contacts_agent_id ? { contacts_agent_id: agentOf(ch.contacts_agent_id) } : {}),
-    };
-    if (!agents.has(want.agent_id) || (want.contacts_agent_id && !agents.has(want.contacts_agent_id))) {
+    const want = { ...ch, agent_id: agentOf(ch.agent_id) };
+    if (!agents.has(want.agent_id)) {
       skip("channels", ch.id, ch.label, "agent_missing");
       continue;
     }
@@ -371,8 +366,7 @@ function planRoutines(deps: ImportDeps, file: InstanceFile, c: Ctx) {
     const action = !shaped ? "add" : same(compared(shaped), compared(want)) ? "same" : "update";
     // A command runs on this computer: a routine with one, or one whose work changed, waits for the owner.
     const commands = Boolean(want.pre_command || want.post_command || want.action === "shell");
-    // So does one that would act on Total here: how freely it acts is this owner's choice (DECISIONS.md#d-223).
-    const wait = commands || Boolean(here) || want.autonomy === "total";
+    const wait = commands || Boolean(here);
     push(
       "routines",
       r.id,
@@ -402,10 +396,6 @@ function planRoutines(deps: ImportDeps, file: InstanceFile, c: Ctx) {
 function planProjects(deps: ImportDeps, file: InstanceFile, c: Ctx) {
   const { store, userHome } = deps;
   const isDir = (p: string) => fs.existsSync(p) && fs.statSync(p).isDirectory();
-  // A subproject keeps its project when that one comes in the same copy (or is the base project); one level only.
-  const tops = new Set(file.projects.filter((p) => !p.parent).map((p) => p.id));
-  const parentOk = (parent: string | undefined) =>
-    parent && (parent === BASE_PROJECT_ID || tops.has(parent)) ? parent : undefined;
   for (const p of file.projects) {
     const dir = p.path ? expandHome(p.path, userHome) : undefined;
     // Each folder passes the check the owner's own setting does (not APX's home, not the temp folders, not the
@@ -422,7 +412,6 @@ function planProjects(deps: ImportDeps, file: InstanceFile, c: Ctx) {
     const settle = (id: string) => {
       store.projects.setAutonomy(id, p.autonomy === "total" ? undefined : p.autonomy);
       store.projects.setReadOnlyFolders(id, folders);
-      if (parentOk(p.parent)) store.projects.setParent(id, p.parent);
     };
     // One this computer has keeps how far its agents go and what they read here.
     if (here && here.registered !== false) {

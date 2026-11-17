@@ -37,40 +37,6 @@ A repository can name any command, so **a project server starts only after you a
 the file changes, it needs approving again. `.apc/mcps.json` never holds tokens: a definition that mentions
 `secret://` is ignored there.
 
-### Private servers for one project (development preview)
-
-An owner's server can be limited to one project while its configuration stays private in APX, not in the repository.
-It can use that project's variables. Approvals for the same configuration and credential scope are kept; a different
-project account asks for permission again:
-
-```bash
-apx mcps scope github acme-store           # only this project
-apx mcps scope github global               # available everywhere again
-```
-
-In the connection editor, **Lives in** offers **Global** or a project by name: a server that lives in a project is
-listed among that project's own, and only its agents use it. For a global server, **Available in** picks the projects
-it is on in (**All projects**, or some of them); the same switches show under **By project** in its detail, and the
-list says **In 2 of 3** instead of **Global** while it is off somewhere. Save applies both; Cancel leaves them
-unchanged. Repository connections keep belonging to their repository and do not offer these controls.
-
-Before making it global, check that its variables exist in the places where you will use it. Project variables are
-not copied into the global store. The editor names any variables that need a value in the selected scope; you can
-still save a connection while preparing those values. This does not move a repository's `.apc/mcps.json` definition.
-
-### Variables and links from chat (development preview)
-
-**Use a variable** beside an environment or header value opens a searchable list. You can also press **Ctrl+Space**
-inside the value, use the arrow keys and press Enter. Picking a name inserts a chip at the cursor, preserving text
-such as `Bearer `; you can keep typing after the chip, or before it. The list uses the selected project's effective variables: its own value wins over its parent's
-or the global value, and each name appears once. **New variable…** stores a value in that same scope before inserting
-its reference. No values appear in the picker.
-
-A link such as `[Acme](apx:resources/mcp/acme/global)` opens a private connection's editor over the chat, even when it
-is limited to a project. For a repository connection use `apx:resources/mcp/acme/PROJECT_ID`. Without the last segment,
-a duplicate name asks which connection you mean. A missing exact target never opens a different connection with the
-same name. Closing or saving returns to the same conversation.
-
 ## Add, approve, remove
 
 <Tabs>
@@ -128,15 +94,8 @@ Add `--project <id>` for a project's server, and `--scope global|project` when a
 Each server has **Tool permissions**:
 
 - **Ask first**: each agent asks you before using a tool that changes something.
-- **All allowed**: no agent asks for its tools, ones the server adds later included. If the server's definition
-  changes, they ask again.
-- **Some**: click a tool to allow it (green) or to make it ask again. Tools the server adds later ask first, even when
-  you had picked every tool; leaving one tool out of **All allowed** turns it into **Some**.
-
-The list shows each server's tools and permissions as they were the last time it ran, so you see them without
-opening it. Hover a server's dot for what it means: filled, running now; ring, ready (it starts when an agent uses
-it); amber, it needs you (approve it or sign in); red, it did not start. Click one of its variables to open it in
-**Variables**.
+- **All allowed**: no agent asks for these tools. If the server or a tool changes, they ask again.
+- **Some**: click a tool to allow it (green) or to make it ask again.
 
 On top of that, an agent's own autonomy and its `tools:` list still apply, and anything you approved "always" for one
 agent or chat shows under **Allowed for one agent or chat**. See [Autonomy](/concepts/autonomy/).

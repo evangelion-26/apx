@@ -1,4 +1,3 @@
-import "../styles/app-screen.css";
 import { AgentAvatar, Button, EmptyState, IconButton, Icons, Menu } from "@apx/ui";
 import { useState } from "react";
 import { blobOf, projectName } from "../data/identity.ts";

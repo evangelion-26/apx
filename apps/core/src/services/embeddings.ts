@@ -1,7 +1,6 @@
 // Embedding dialects: turn texts into vectors so notes can be found by meaning. Ollama runs them on this machine
 // (bge-m3, embeddinggemma…); Gemini and OpenAI-compatible APIs in the cloud.
 import { errorMessage } from "../errors.ts";
-import { PINNED } from "../models/pinned.ts";
 import { joinUrl, type ServiceConfig, ServiceError } from "./types.ts";
 
 type Fetch = typeof fetch;
@@ -34,7 +33,7 @@ async function ollama(s: ServiceConfig, texts: string[], _key: string | undefine
 
 async function gemini(s: ServiceConfig, texts: string[], key: string | undefined, signal: AbortSignal, f: Fetch) {
   if (!key) throw new Error("needs a Gemini API key");
-  const model = s.model || PINNED.geminiEmbedding.id;
+  const model = s.model || "gemini-embedding-001";
   // The key goes in a header, never in the URL (URLs end up in logs).
   const j = await postJson(
     f,
@@ -50,7 +49,7 @@ async function openai(s: ServiceConfig, texts: string[], key: string | undefined
   const j = await postJson(
     f,
     joinUrl(s.base_url, "/v1/embeddings"),
-    { model: s.model || PINNED.openaiEmbedding.id, input: texts },
+    { model: s.model || "text-embedding-3-small", input: texts },
     key ? { authorization: `Bearer ${key}` } : {},
     signal,
   );

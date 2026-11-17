@@ -1,4 +1,3 @@
-import "../../styles/chat-cards.css";
 import type { Part } from "@apx/protocol";
 import { Button, IconButton, Icons } from "@apx/ui";
 import { useData } from "../../data/state.ts";

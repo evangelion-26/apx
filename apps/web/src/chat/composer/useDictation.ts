@@ -12,16 +12,10 @@ const LISTEN_MS = 2000;
 const LISTEN_MAX_BYTES = 8_000_000;
 
 /**
- * Dictation: what the microphone hears becomes words in the composer, for review before sending; the recording itself
- * is not attached, unless it could not be turned into words: then it is, so what the person said is not lost. While it
- * records, `heard` shows the words so far (only with a transcription engine on this machine); the final transcript
- * replaces them when it stops.
+ * Records a voice note and its words for review in the composer before sending. While it records, `heard` shows the
+ * words so far (only with a transcription engine on this machine); the final transcript replaces them when it stops.
  */
-export function useDictation(
-  thread: string | undefined,
-  onWords: (text: string) => void,
-  onKept: (audio: Attached) => void,
-) {
+export function useDictation(thread: string | undefined, onAudio: (audio: Attached, text?: string) => void) {
   const [state, setState] = useState<DictationState>(() =>
     typeof MediaRecorder === "undefined" || !navigator.mediaDevices ? "unsupported" : "idle",
   );
@@ -32,10 +26,8 @@ export function useDictation(
   const stopListening = useRef<(() => void) | undefined>(undefined);
   const alive = useRef(true);
   const starting = useRef(false);
-  const deliver = useRef(onWords);
-  deliver.current = onWords;
-  const keep = useRef(onKept);
-  keep.current = onKept;
+  const deliver = useRef(onAudio);
+  deliver.current = onAudio;
 
   useEffect(() => {
     alive.current = true;
@@ -81,14 +73,10 @@ export function useDictation(
 
   const finish = async (audio: Blob) => {
     try {
-      const words = await transcribe(audio, thread);
-      if (!alive.current) return;
-      if (words) deliver.current(words);
-      else if (words === undefined) {
-        const ext = audio.type.startsWith("audio/mp4") ? "m4a" : audio.type.startsWith("audio/ogg") ? "ogg" : "webm";
-        const file = new File([audio], `${t("composer.voiceNote")}.${ext}`, { type: audio.type });
-        keep.current(await upload(file, thread));
-      }
+      const ext = audio.type.startsWith("audio/mp4") ? "m4a" : audio.type.startsWith("audio/ogg") ? "ogg" : "webm";
+      const media = await upload(new File([audio], `${t("composer.voiceNote")}.${ext}`, { type: audio.type }), thread);
+      const words = await transcribe(media.id, thread);
+      if (alive.current) deliver.current(media, words);
     } catch (error) {
       if (alive.current)
         notify(t("composer.dictationFailed", { error: error instanceof Error ? error.message : String(error) }));

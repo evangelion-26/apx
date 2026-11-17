@@ -27,8 +27,7 @@ test("permission status reports only current owner-wide grants without starting 
     await env.client.call("mcp.approveTool", { ...target, tool: "echo" });
     assert.equal((await status())?.tool_permission_mode, "some");
     await env.client.call("mcp.approveTool", { ...target, tool: "token" });
-    // Every tool picked one by one is still a pick (a tool added later asks): "all" is the server's own setting.
-    assert.equal((await status())?.tool_permission_mode, "some");
+    assert.equal((await status())?.tool_permission_mode, "all");
     for (const tool of tools) await env.client.call("tools.revoke", { key: tool.key });
     assert.equal((await status())?.tool_permission_mode, "ask");
     await env.client.call("mcp.approveTool", { ...target, tool: "echo" });

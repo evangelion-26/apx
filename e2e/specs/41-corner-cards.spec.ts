@@ -3,8 +3,7 @@
 import type { Route } from "@playwright/test";
 import { expect, open, test } from "./kit.ts";
 
-// The deck of cards at the foot of the compact sidebar.
-test.use({ cornerCards: true, compactSidebar: true });
+test.use({ cornerCards: true });
 
 test.afterEach(async ({ page }) => {
   await page.unrouteAll({ behavior: "ignoreErrors" });
@@ -14,8 +13,8 @@ test("one card at a time: closing one brings the next, and closed stays closed",
   await open(page);
   const corner = page.getByRole("complementary", { name: "Novedades e invitaciones" });
   await expect(corner.getByText("Sumate a la comunidad")).toBeVisible();
-  // The star card waits behind the deck's front one: nothing of it to reach yet.
-  await expect(corner.getByRole("button", { name: "Dar una estrella" })).toHaveCount(0);
+  // The star card waits behind, out of reach.
+  await expect(corner.getByRole("button", { name: "Dar una estrella" })).not.toBeInViewport({ ratio: 1 });
 
   await corner.locator('[data-card="discord"]').getByRole("button", { name: "Cerrar" }).click();
   await expect(corner.getByText("Sumate a la comunidad")).toBeHidden();

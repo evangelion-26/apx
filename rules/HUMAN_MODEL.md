@@ -42,39 +42,6 @@ A bundled local core still updates with Desktop. See [Update coordination](UPDAT
 startup holds an OS-released SQLite lock per canonical home, independent of port. Local service identities are
 home-specific; `APX_URL` does not redirect OS service commands. See [Desktop lifecycle](DESKTOP_LIFECYCLE.md).
 
-### Native activity review (planned for 2.14)
-
-`engine/activity-review.ts` contributes one check to the existing office background scheduler, independent of user
-routines and profile selection. Owner-only `activity_review.settings/configure` use the protocol/router; the
-super-agent reaches them through `apx_settings`. Settings and the bounded runtime cursor live in the settings store.
-A consumed window is persisted before the tool-free auxiliary calls; failures and interrupted calls are not replayed.
-Sources come from completed runs in the activity window, not the pinned-first chat list or a chat's latest runs.
-Eligibility is applied before the excerpt cap; inactive chats and automated turns cannot displace eligible activity.
-At most three project scopes (including no project) are sampled separately, never sharing a model reference. The
-calls share a 60-second deadline and 2,400 requested output tokens; each can produce one proposal.
-Disabling or configuring invalidates in-flight results. Verified owner evidence, project scope and title deduplication
-are rechecked before an atomic task-proposal/notification/runtime commit. No agent is assigned and no run is admitted.
-The maintained base prompt cannot be replaced; optional details remain untrusted data. See the secretary guide for
-sampling/cost limits and exclusions. This is bounded assistance, not full-thread auditing or semantic deduplication.
-
-### Agent lifecycle review (planned for 2.14)
-
-`domain/agent-review.ts` observes the existing coalesced `team.updated` event. Agent creation, definition edits,
-clones, imports and APC file reindexing converge there. Revision fingerprints and pending agents persist in a
-versioned setting, committed atomically with their notices; the first start baselines existing definitions, later
-starts detect changes against that baseline.
-There is no per-save model call or additional file watcher. One unread attention notice per project (or global team)
-is replaced on further changes. The owner asks the super-agent to load the single native `apx-agents` guide and
-review a bounded batch; `apx-agent-prompts` remains a reserved load alias, not another catalog entry.
-Owner-only `agents.review_queue` and `agents.review_ack`, plus `agent_set`'s review mode, expose this procedure.
-`agents.get` returns a revision; optional `agents.update.if_revision` reindexes a file-backed definition and refuses
-stale proposals before writing, then checks again after staging the replacement bytes and before the atomic rename.
-This is optimistic validation, not filesystem compare-and-swap against a non-cooperating editor; an external write
-after the final check remains outside its exclusion guarantee. Checked prompt updates acknowledge the resulting
-version to avoid review loops. Scan failures roll back, are logged without terminating the core, and retry on a
-later team change or restart.
-Ordinary edits retain their existing behavior. Notifications are passive; no autonomous semantic review is scheduled.
-
 ## 2. How a call flows
 
 ```
@@ -95,9 +62,8 @@ project context, memory, open tasks and existing chats; settings keep the opt-in
 fingerprints, not new permissions. Context inserted into a brief or prompt proposal is escaped JSON, explicitly
 marked as untrusted reference data. The panel previews the complete before/after and asks separately before
 applying proposed instructions to an unchanged, empty agent draft. Dismissal or navigation never applies them;
-only the existing `agents.create` operation persists a new agent. The overview's review card shows only the gaps in
-plain words and opens a chat whose first message the owner reads, changes and sends through the existing
-`threads.send`; the panel never shows the brief. Preparation never blocks creation or ordinary chat.
+only the existing `agents.create` operation persists a new agent. Starting work uses the existing `threads.send`
+operation; preparation never blocks creation or ordinary chat.
 
 Node capabilities (`browser.*`): the handler is `apps/core/src/rpc/browser.ts`, which asks
 `apps/core/src/nodes/broker.ts` to send the same method + params to the connected desktop over its socket; the
@@ -156,9 +122,6 @@ stalled tasks, Google Calendar's event reminders (`engine/calendar-reminders.ts`
 (`engine/mail-check.ts`) are checks; each one an integration does is turned on and timed in that integration's
 settings (`integrations.settings` / `integrations.configure`, a `SETTINGS` entry), never in the routines list.
 [D-171](DECISIONS.md#d-171) says when new periodic work is a check and when it is a routine.
-The office clock's task lanes (`engine/task-work.ts` start times and pickup, `engine/task-stall.ts`) take their
-candidates from `domain/task-lanes.ts`, which filters eligibility in SQL before any limit; the stall check walks tasks in
-progress a page at a time from a saved cursor and asks a few agents per check ([D-206](DECISIONS.md#d-206)).
 
 ## 3. Modules and dependency direction
 

@@ -7,17 +7,13 @@ import { appOnly, noticePrefs, quietNow } from "../domain/notices.ts";
 import type { NewNotification } from "../domain/notifications.ts";
 import { OWNER_ID } from "../domain/persons.ts";
 import type { Store } from "../domain/store.ts";
-import { answersInHome } from "./agent-project.ts";
 import type { Delivery } from "./delivery.ts";
 import { inputPresentation } from "./notices.ts";
 import { channelTexts } from "./texts.ts";
 import type { ChannelConfig } from "./types.ts";
 
-/** A notice about a channel; `channel` names the account it is about when its chat does not. */
-export type ChannelNotice = NewNotification & { channel?: string | undefined };
-
 /** What a notice shows in the tray; its kind is always "channel", its body the words unless they differ. */
-type TrayNotice = Omit<ChannelNotice, "kind" | "body"> & { body?: string };
+type TrayNotice = Omit<NewNotification, "kind" | "body"> & { body?: string };
 
 /** The owner hears it in the tray and on their chat app: one notice, two places. */
 export type TellOwner = (said: Presentation, tray: TrayNotice, kind?: OutboxRow["kind"]) => void;
@@ -32,31 +28,17 @@ export function createOwnerNotices(deps: {
 }) {
   const { store } = deps;
 
-  /** About an account whose notices the owner silenced: kept out of the tray and their chat app. Failures still arrive. */
-  function silenced(n: Pick<ChannelNotice, "level" | "thread_id" | "channel">): boolean {
-    if (n.level === "error") return false;
-    const id = n.channel ?? (n.thread_id ? store.threads.get(n.thread_id)?.channel?.id : undefined);
-    return Boolean(id && deps.configs().find((c) => c.id === id)?.quiet);
-  }
-
-  /** A notice for the app's tray, unless the account it is about is silenced. */
-  const attention = ({ channel, ...n }: ChannelNotice): void => {
-    if (!silenced({ ...n, channel })) deps.attention(n);
-  };
-
   /**
-   * Something for the owner, on their preferred channel or another that knows them and the super-agent answers (the
-   * outbox waits while it is not running); in quiet hours it arrives without sound. False when no such channel knows
-   * the owner.
+   * Something for the owner, on their preferred channel or another that knows them (the outbox waits while it is not
+   * running); in quiet hours it arrives without sound. False when no channel knows the owner.
    */
   function notifyOwner(body: Presentation, kind: OutboxRow["kind"] = "notice", threadId?: string): boolean {
     const prefs = noticePrefs(store);
     // The app only: what is told here is in the tray and on their phones already.
     if (appOnly(prefs)) return false;
     const refused = new Set(body.refused_by);
-    // Notices are the super-agent's words: an account a project's head answers is that head's line, not theirs.
     const order = [...deps.live()]
-      .filter((l) => !refused.has(l.config.id) && answersInHome(store, l.config.agent_id))
+      .filter((l) => !refused.has(l.config.id))
       .sort(
         (a, b) =>
           Number(b.config.id === prefs.channel) - Number(a.config.id === prefs.channel) ||
@@ -73,9 +55,8 @@ export function createOwnerNotices(deps: {
 
   /** One notice for the owner: in the app's tray always, on their chat app when they picked one. */
   const tell: TellOwner = (said, tray, kind = "notice") => {
-    if (silenced(tray)) return;
     notifyOwner(said, kind, tray.thread_id);
-    attention({ ...tray, kind: "channel", body: tray.body ?? said.text });
+    deps.attention({ ...tray, kind: "channel", body: tray.body ?? said.text });
   };
 
   /**
@@ -153,5 +134,5 @@ export function createOwnerNotices(deps: {
     return { ...inputPresentation(part, channelTexts(store)), input_id: part.input_id };
   }
 
-  return { notifyOwner, tell, attention, notifyOnChat, shownOn, ownerFallback, cardFor };
+  return { notifyOwner, tell, notifyOnChat, shownOn, ownerFallback, cardFor };
 }

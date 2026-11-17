@@ -7,7 +7,6 @@ import path from "node:path";
 import type { Thread } from "@apx/protocol";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { z } from "zod";
-import { lineage, parentOf } from "../domain/projects.ts";
 import type { Store } from "../domain/store.ts";
 import { badRequest, conflict, errorMessage, unavailable } from "../errors.ts";
 import { commandEnv, SECRET_NAME } from "../harness/env.ts";
@@ -16,7 +15,7 @@ import { onPath } from "../programs.ts";
 import { projectSecretName, type Secrets } from "../secrets.ts";
 import { cap, untrusted } from "../tools/result.ts";
 import { type Confirm, type Effect, invalidArguments, type ScopedThread, type Tool } from "../tools/types.ts";
-import { type McpTool, mcpApproval, mcpServerApproval, serverApprovalId } from "./approval.ts";
+import { type McpTool, mcpApproval, serverApprovalId } from "./approval.ts";
 import { ARGS_SECRET, type McpDef, mcpConfig } from "./config.ts";
 import { fileRefs, fillFileArgs, hasFileRefs, type OpenFile, refOf } from "./file-args.ts";
 import { createStderrLogs } from "./logs.ts";
@@ -69,8 +68,6 @@ export type McpStatus = {
   tool_permission_mode: "unknown" | "ask" | "all" | "some";
   vars: Array<{ name: string; set: boolean }>;
   off_here: boolean;
-  /** A global server: the projects it is turned off in (it is on in every other one). */
-  off_in: string[];
   error?: string;
 };
 
@@ -126,17 +123,13 @@ export function createMcp(deps: {
    * `secret://NAME` is resolved here, at start, and never written anywhere else: a whole value, or inside text
    * ("Bearer secret://API_KEY"). A name with no value stays as written.
    */
-  /** A project's own values first, then its parent's for a subproject (domain/projects.ts lineage). */
-  const valuesIn = (projectId: string | undefined) => lineage(deps.store.projects, projectId);
   const resolveText = (v: string, valuesOf?: string) =>
-    deps.secrets.resolveIn(v, valuesIn(valuesOf)) ??
-    v.replace(SECRET_REF, (ref) => deps.secrets.resolveIn(ref, valuesIn(valuesOf)) ?? ref);
+    deps.secrets.resolveIn(v, valuesOf) ?? v.replace(SECRET_REF, (ref) => deps.secrets.resolveIn(ref, valuesOf) ?? ref);
   const resolve = (values: Record<string, string>, valuesOf?: string) =>
     Object.fromEntries(Object.entries(values).map(([k, v]) => [k, resolveText(v, valuesOf)]));
   /** An owner's server in a project with its own value for one of its variables runs as a copy of its own there. */
   const inProject = (d: McpDef, projectId: string | undefined): McpDef =>
-    projectId &&
-    valuesIn(projectId).some((p) => secretNames(d).some((n) => deps.secrets.has(`secret://${projectSecretName(p, n)}`)))
+    projectId && secretNames(d).some((n) => deps.secrets.has(`secret://${projectSecretName(projectId, n)}`))
       ? { ...d, values_of: projectId }
       : d;
 
@@ -196,7 +189,7 @@ export function createMcp(deps: {
       });
       // A server may print what it was given: its secrets and credential-like variables are masked in its log.
       const hidden = [
-        ...secretNames(d).map((n) => deps.secrets.resolveIn(`secret://${n}`, valuesIn(d.values_of)) ?? ""),
+        ...secretNames(d).map((n) => deps.secrets.resolveIn(`secret://${n}`, d.values_of) ?? ""),
         ...Object.keys(d.env)
           .filter((k) => SECRET_NAME.test(k) || d.env[k]?.includes("secret://"))
           .map((k) => env[k] ?? ""),
@@ -221,34 +214,6 @@ export function createMcp(deps: {
       clearTimeout(timer);
     }
   }
-
-  /** The tools a server listed last, kept so its list and permissions show before it starts again. */
-  const seen = (d: McpDef) => {
-    const s = deps.store.settings.read("mcp_tools_seen")[keyOf(d)];
-    return s?.hash === d.hash ? s.tools : undefined;
-  };
-  const remember = (d: McpDef, tools: McpTool[]) => {
-    const all = deps.store.settings.read("mcp_tools_seen");
-    const next = { hash: d.hash, tools: tools.map((t) => ({ name: t.name, key: mcpApproval(d, t).key })) };
-    if (JSON.stringify(all[keyOf(d)]) === JSON.stringify(next)) return;
-    all[keyOf(d)] = next;
-    deps.store.settings.write("mcp_tools_seen", all);
-  };
-  const forget = (mine: (key: string) => boolean) => {
-    const all = deps.store.settings.read("mcp_tools_seen");
-    const keep = Object.fromEntries(Object.entries(all).filter(([k]) => !mine(k)));
-    if (Object.keys(keep).length !== Object.keys(all).length) deps.store.settings.write("mcp_tools_seen", keep);
-  };
-  /**
-   * "all": the server's own grant for every agent (new tools included); "some": tools approved one by one for every
-   * agent; "ask": none; "unknown": no grant and no tools seen yet.
-   */
-  const permissionMode = (d: McpDef, known: Array<{ key: string }>): McpStatus["tool_permission_mode"] => {
-    const server = mcpServerApproval(d);
-    if (deps.store.approvals.allows(server)) return "all";
-    if (!known.length) return "unknown";
-    return known.some((t) => deps.store.approvals.allows({ ...server, key: t.key })) ? "some" : "ask";
-  };
 
   /**
    * A server that asked the owner to sign in is not started again by itself, a restart included, until they sign in
@@ -296,7 +261,6 @@ export function createMcp(deps: {
           c.client = client;
           c.tools = tools;
           c.status = "ready";
-          remember(d, tools);
           c.signInUrl = undefined;
           setWaitsSignIn(d, false);
         },
@@ -446,13 +410,6 @@ export function createMcp(deps: {
   }, 60_000);
   idle.unref();
 
-  /** A subproject also reaches its parent's own servers, under its own of the same name. */
-  const projectDefs = (projectId: string): McpDef[] => {
-    const own = config.project(projectId);
-    const parent = parentOf(deps.store.projects, projectId);
-    const taken = new Set(own.map((d) => d.name));
-    return [...own, ...(parent ? config.project(parent.id).filter((d) => !taken.has(d.name)) : [])];
-  };
   const defsFor = (projectId: string | undefined) => {
     const off = projectId ? new Set(config.offIn(projectId)) : new Set<string>();
     return [
@@ -460,7 +417,7 @@ export function createMcp(deps: {
         .global()
         .filter((d) => !off.has(d.name) && (!d.only || d.only === projectId))
         .map((d) => inProject(d, projectId)),
-      ...(projectId ? projectDefs(projectId) : []),
+      ...(projectId ? config.project(projectId) : []),
     ];
   };
 
@@ -511,33 +468,6 @@ export function createMcp(deps: {
         approved: deps.store.approvals.allows(mcpApproval(d, t)),
       }));
     },
-    /** Whether every tool of the server is allowed, those it adds later included, or which ones ("some"). */
-    toolMode(d: McpDef): "ask" | "all" | "some" {
-      const mode = permissionMode(d, seen(d) ?? []);
-      return mode === "unknown" ? "ask" : mode;
-    },
-    /**
-     * "all": every tool, new ones included, for every agent (one grant for the server). "ask": none; the server's
-     * grant and each tool's own for every agent go (one agent's or one chat's stay).
-     */
-    setToolMode(d: McpDef, mode: "ask" | "all"): void {
-      const server = mcpServerApproval(d);
-      if (mode === "all") {
-        deps.store.approvals.grant(server, "always", "");
-        return;
-      }
-      const ownerWide = deps.store.approvals
-        .list()
-        .filter(
-          (g) =>
-            g.server === server.server &&
-            g.scope === "always" &&
-            !g.agent_id &&
-            !g.thread_id &&
-            (g.project_id ?? "") === (server.project_id ?? ""),
-        );
-      for (const g of ownerWide) deps.store.approvals.revoke(g.key);
-    },
     async describe(d: McpDef, project?: string) {
       const context = project ?? d.values_of ?? d.project_id ?? d.only;
       const eligible = defsFor(context).find((x) => keyOf(x) === keyOf(d));
@@ -556,24 +486,21 @@ export function createMcp(deps: {
       return invoke(d, t, parsed.args, AbortSignal.timeout(CALL_MS), project ?? d.values_of ?? d.project_id ?? d.only);
     },
     status(projectId?: string): McpStatus[] {
+      const projects = projectId ? [projectId] : deps.store.projects.list().map((p) => p.id);
       const defs = [
         ...config
           .global()
           .filter((d) => !projectId || !d.only || d.only === projectId)
           .map((d) => inProject(d, projectId ?? d.only)),
-        // A subproject lists its parent's servers too: their project_id says they are the parent's.
-        ...(projectId ? projectDefs(projectId) : deps.store.projects.list().flatMap((p) => config.project(p.id))),
+        ...projects.flatMap((p) => config.project(p)),
       ];
       const offHere = new Set(projectId ? config.offIn(projectId) : []);
-      const offIn = deps.store.projects.list().map((p) => ({ id: p.id, off: new Set(config.offIn(p.id)) }));
       return defs.map((d) => {
         const c = conns.get(keyOf(d));
         const trusted = config.trusted(d);
         const live = c && c.hash === d.hash ? c : undefined;
-        // Not running now: what it listed last time, so the list tells its tools and permissions before a click.
-        const known = live?.tools.length
-          ? live.tools.map((t) => ({ name: t.name, key: mcpApproval(d, t).key }))
-          : (seen(d) ?? []);
+        const known = live?.tools ?? [];
+        const allowed = known.filter((t) => deps.store.approvals.allows(mcpApproval(d, t))).length;
         return {
           name: d.name,
           scope: d.scope,
@@ -589,15 +516,20 @@ export function createMcp(deps: {
               ? "needs-approval"
               : (live?.status ?? (waitsSignIn(d) ? "needs-sign-in" : "off")),
           ...(live?.signInUrl ? { sign_in_url: live.signInUrl } : {}),
-          tools: known.length,
-          tool_names: known.map((t) => t.name),
-          tool_permission_mode: permissionMode(d, known),
+          tools: live?.tools.length ?? 0,
+          tool_names: live?.tools.map((t) => t.name) ?? [],
+          tool_permission_mode: !known.length
+            ? "unknown"
+            : !allowed
+              ? "ask"
+              : allowed === known.length
+                ? "all"
+                : "some",
           vars: secretNames(d).map((name) => ({
             name,
-            set: deps.secrets.resolveIn(`secret://${name}`, valuesIn(projectId ?? d.only)) !== undefined,
+            set: deps.secrets.resolveIn(`secret://${name}`, projectId ?? d.only) !== undefined,
           })),
           off_here: d.scope === "global" && offHere.has(d.name),
-          off_in: d.scope === "global" && !d.only ? offIn.filter((p) => p.off.has(d.name)).map((p) => p.id) : [],
           ...(d.own || d.scope === "project"
             ? {
                 definition: {
@@ -651,7 +583,6 @@ export function createMcp(deps: {
         }
         const { client, tools } = first;
         await client.close().catch(() => {});
-        remember(d, tools);
         // A server that failed earlier is worth starting again for agents now that it answers.
         const live = conns.get(keyOf(d));
         if (live?.status === "error") conns.delete(keyOf(d));
@@ -677,8 +608,8 @@ export function createMcp(deps: {
       return stderr.read(keyOf(d), n);
     },
     /** Closes a server's connection now (approval withdrawn, definition removed). */
-    drop(d: Pick<McpDef, "scope" | "project_id" | "name">, preserveApprovals = false): void {
-      if (!preserveApprovals) deps.store.approvals.revokeServer(serverApprovalId(d));
+    drop(d: Pick<McpDef, "scope" | "project_id" | "name">): void {
+      deps.store.approvals.revokeServer(serverApprovalId(d));
       const prefix = `${d.scope}:${d.project_id ?? ""}:`;
       const mine = (key: string) => key.startsWith(prefix) && key.endsWith(`:${d.name}`);
       for (const [key, c] of conns) {
@@ -688,7 +619,6 @@ export function createMcp(deps: {
         }
       }
       stderr.forget(mine);
-      if (!preserveApprovals) forget(mine);
     },
     /** A global server as it runs in `projectId` (or in its own project, when it is limited to one). */
     find(scope: "global" | "project", name: string, projectId?: string): McpDef | undefined {

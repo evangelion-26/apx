@@ -1,4 +1,3 @@
-import "../../styles/chat-cards.css";
 import type { Part } from "@apx/protocol";
 import { useT } from "../../i18n/index.ts";
 

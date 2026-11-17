@@ -2,18 +2,16 @@ import "../styles/screens.css";
 import "../styles/computer.css";
 import type { ComputerMemoryRefusal, ComputerScreen, Result } from "@apx/protocol";
 import { ApxError } from "@apx/protocol/client";
-import { AgentAvatar, Button, IconButton, Icons, Menu } from "@apx/ui";
+import { AgentAvatar, Button, EmptyState, IconButton, Icons, Menu } from "@apx/ui";
 import { useEffect, useRef, useState } from "react";
 import { ChatView } from "../chat/ChatView.tsx";
-import { SectionPage } from "../common/SectionPage.tsx";
 import { client } from "../data/client.ts";
 import { data, useData } from "../data/state.ts";
 import { usePack, useT } from "../i18n/index.ts";
 import { useVmDisplay } from "../panel/useVmDisplay.ts";
 import { go, useNav } from "../shell/nav.ts";
-import { screenChat } from "./agent.ts";
+import { screenChat, screensUp } from "./agent.ts";
 import { ComputerError } from "./ComputerError.tsx";
-import { Machines } from "./Machines.tsx";
 import { memoryRefusal } from "./refusal.ts";
 import { computersOf } from "./summary.ts";
 
@@ -327,22 +325,19 @@ function ComputersScreenBody() {
     }
   };
   const off = (status?.allowed ?? []).filter((id) => agents[id] && !inUse.some((s) => s.agent === id));
-  const problem = (
-    <ComputerError
-      error={error || status?.error || ""}
-      needs={ready ? undefined : status?.needs}
-      onRetry={() => void power(true)}
-      refusal={refusal}
-      busy={busy}
-      onLower={(gib) => void power(true, gib)}
-      onAnyway={() => void power(true, undefined, true)}
-    />
-  );
-  // One screen open fills the view; the list of machines is one step back.
-  if (large)
-    return (
-      <section className="page computers" aria-label={t("nav.computers")}>
-        {problem}
+  const starting = status?.phase === "preparing" || status?.phase === "stopping";
+  return (
+    <section className="page computers" aria-label={t("nav.computers")}>
+      <ComputerError
+        error={error || status?.error || ""}
+        needs={ready ? undefined : status?.needs}
+        onRetry={() => void power(true)}
+        refusal={refusal}
+        busy={busy}
+        onLower={(gib) => void power(true, gib)}
+        onAnyway={() => void power(true, undefined, true)}
+      />
+      {large ? (
         <Large
           screen={large}
           chatOf={chatOf(large)}
@@ -357,13 +352,16 @@ function ComputersScreenBody() {
           }
           onStopAll={() => void power(false)}
         />
-      </section>
-    );
-  return (
-    <SectionPage className="computers" label={t("nav.computers")} title={t("nav.computers")} lead={t("machines.lead")}>
-      {problem}
-      <Machines status={status} busy={busy} onPower={(on) => void power(on)}>
-        {ready && inUse.length + off.length > 0 && (
+      ) : ready ? (
+        <>
+          {ready && (
+            <header className="computers__bar">
+              <span>{t("computers.lead", { held: screensUp(status), max: status?.max_screens ?? 1 })}</span>
+              <Button size="sm" variant="secondary" loading={busy} onClick={() => void power(false)}>
+                {t("computer.stop")}
+              </Button>
+            </header>
+          )}
           <div className="computers__wall" data-count={inUse.length + off.length}>
             {inUse.map((screen) => (
               <Tile
@@ -386,10 +384,25 @@ function ComputersScreenBody() {
               />
             ))}
           </div>
-        )}
-      </Machines>
-      {!ready && !status?.needs && <p className="machines__hint">{t("computers.offHint")}</p>}
-    </SectionPage>
+        </>
+      ) : (
+        <EmptyState
+          size="lg"
+          icon={<Icons.Monitor />}
+          title={t(starting ? "computer.preparing" : "computers.off")}
+          action={
+            // With a step left on this machine, its own retry starts it.
+            status?.needs ? undefined : (
+              <Button loading={busy || starting} onClick={() => void power(true)}>
+                {t("computer.start")}
+              </Button>
+            )
+          }
+        >
+          {t("computers.offHint")}
+        </EmptyState>
+      )}
+    </section>
   );
 }
 

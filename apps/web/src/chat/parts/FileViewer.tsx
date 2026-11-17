@@ -1,4 +1,3 @@
-import "../../styles/chat-cards.css";
 import { Dialog, Skeleton } from "@apx/ui";
 import { Suspense, useEffect, useState } from "react";
 import { mediaUrl } from "../../data/media.ts";

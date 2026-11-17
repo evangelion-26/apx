@@ -28,8 +28,6 @@ export const InstanceProject = z.object({
   kind: z.string().max(40).optional(),
   autonomy: Autonomy.optional(),
   read_only_folders: z.array(z.string().max(4096)).max(200).optional(),
-  /** A subproject's project (BASE_PROJECT_ID for the base project's). */
-  parent: Id.optional(),
 });
 export type InstanceProject = z.infer<typeof InstanceProject>;
 export const InstanceRoutine = Routine.pick({
@@ -45,7 +43,6 @@ export const InstanceRoutine = Routine.pick({
   call_model: true,
   anchor: true,
   max_steps: true,
-  autonomy: true,
   origin: true,
   enabled: true,
 });
@@ -72,7 +69,7 @@ export const InstanceMemory = z.object({
   agent_id: Id.optional(),
   text: z.string().min(1).max(20_000),
   kind: z.enum(["user", "feedback", "project", "reference", "procedure"]).optional(),
-  source: z.enum(["owner", "agent", "imported"]),
+  source: z.enum(["owner", "agent"]),
 });
 export type InstanceMemory = z.infer<typeof InstanceMemory>;
 /** A channel as set up; its token and its linked account stay on the computer that has them. */

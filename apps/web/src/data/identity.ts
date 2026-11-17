@@ -102,8 +102,6 @@ export type ProjectEntry = {
   path: string | undefined;
   isDefault: boolean;
   kind?: string | undefined;
-  /** A subproject's parent (DEFAULT_PID for the base project): it works with the parent's agents and resources. */
-  parent?: string | undefined;
 };
 
 /** Sidebar order: the base space first, then the real projects as the core lists them. */
@@ -112,20 +110,8 @@ export function projectEntries(projects: Project[]): ProjectEntry[] {
     { id: DEFAULT_PID, name: baseName(), path: undefined, isDefault: true, kind: data.get().base.kind },
     ...projects
       .filter((p) => p.registered !== false)
-      .map((p) => ({ id: p.id, name: p.name, path: p.path, isDefault: false, kind: p.kind, parent: p.parent })),
+      .map((p) => ({ id: p.id, name: p.name, path: p.path, isDefault: false, kind: p.kind })),
   ];
-}
-
-/** A project's subprojects, by name. */
-export function subprojectsOf(entries: readonly ProjectEntry[], id: string): ProjectEntry[] {
-  return entries.filter((p) => p.parent === id).sort((a, b) => a.name.localeCompare(b.name));
-}
-
-/** Projects in the given order with each one's subprojects right after it (a subproject whose parent is gone: last). */
-export function nestProjects(ordered: readonly ProjectEntry[]): ProjectEntry[] {
-  const ids = new Set(ordered.map((p) => p.id));
-  const tops = ordered.filter((p) => !p.parent || !ids.has(p.parent));
-  return tops.flatMap((p) => [p, ...subprojectsOf(ordered, p.id)]);
 }
 
 export function findProject(projects: Project[], pid: string | undefined): ProjectEntry | undefined {

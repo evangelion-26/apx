@@ -8,7 +8,7 @@ import { loadThread } from "../data/actions.ts";
 import { useData } from "../data/state.ts";
 import { type MessageKey, useT } from "../i18n/index.ts";
 import { ActivationBars, barKey, barOf, hasAgent, useRuns } from "./ActivationBars.tsx";
-import { scheduleText } from "./scheduleText.ts";
+import { scheduleText } from "./Schedule.tsx";
 
 const CALL_KEY: Record<Routine["call_model"], MessageKey> = {
   always: "routines.call.always",
@@ -29,14 +29,7 @@ const ACTION_KEY: Record<Routine["action"], MessageKey> = {
  * A routine beside its list: how it is set up (trigger · before · action · after), its prompt and its activations.
  * Opening one shows that run's conversation in the same drawer; back (or Escape) returns to the routine.
  */
-export function RoutineDrawer(props: {
-  routine: Routine;
-  agentName: string;
-  onEdit: () => void;
-  onClose: () => void;
-  /** Opened from the routine's chat: it sits beside the chat, under its header. */
-  peek?: boolean;
-}) {
+export function RoutineDrawer(props: { routine: Routine; agentName: string; onEdit: () => void; onClose: () => void }) {
   const t = useT();
   const { routine: r } = props;
   const runs = useRuns(r);
@@ -45,7 +38,6 @@ export function RoutineDrawer(props: {
     <Drawer
       label={r.name}
       className="rtdrawer"
-      peek={props.peek ?? false}
       title={<span className="rtdrawer__title">{r.name}</span>}
       onClose={props.onClose}
       back={shown && { label: t("routines.back"), onClick: () => setShown(undefined) }}

@@ -1,27 +1,24 @@
 import "../styles/resources.css";
 import "../styles/shared-files.css";
 import type { SharedFile, SharedKind, SharedOrder } from "@apx/protocol";
-import { Button, EmptyState, Icons, SegmentedControl, Select } from "@apx/ui";
+import { Button, EmptyState, Icons, ProjectTile, SearchField, SegmentedControl, Select } from "@apx/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMediaUrl } from "../chat/parts/useMediaUrl.ts";
-import { SectionPage } from "../common/SectionPage.tsx";
 import { client } from "../data/client.ts";
-import { DEFAULT_PID, type ProjectEntry, projectEntries } from "../data/identity.ts";
+import { DEFAULT_PID, projectEntries, projectInitial, projectName, projectTone } from "../data/identity.ts";
 import { posterUrl } from "../data/media.ts";
 import { useData } from "../data/state.ts";
 import { type MessageKey, useT } from "../i18n/index.ts";
-import { ArtifactGrid, useArtifacts } from "./ArtifactCards.tsx";
 import { SharedPreview } from "./SharedPreview.tsx";
-import { CardLine, kindIcon, ONE, OneProject, SharedActions } from "./sharedFile.tsx";
+import { kindIcon, ONE, Sender, SharedActions, when } from "./sharedFile.tsx";
 
-type Kind = SharedKind | "all" | "artifact";
+type Kind = SharedKind | "all";
 const KINDS: { id: Kind; label: MessageKey }[] = [
   { id: "all", label: "shared.kind.all" },
   { id: "image", label: "shared.kind.image" },
   { id: "video", label: "shared.kind.video" },
   { id: "audio", label: "shared.kind.audio" },
   { id: "document", label: "shared.kind.document" },
-  { id: "artifact", label: "files.kind.artifact" },
 ];
 const ORDERS: { id: SharedOrder; label: MessageKey }[] = [
   { id: "new", label: "shared.order.new" },
@@ -78,34 +75,49 @@ function Thumb({ file }: { file: SharedFile }) {
 
 function Card({ file, onOpen }: { file: SharedFile; onOpen: () => void }) {
   const t = useT();
+  const projects = useData((s) => s.projects);
+  const project = projectName(projects, file.project_id);
   const name = file.name || t(ONE[file.kind]);
   return (
     <li className="sharedf__card">
       <button type="button" className="sharedf__open" onClick={onOpen} aria-label={name}>
         <Thumb file={file} />
       </button>
-      <SharedActions file={file} />
       <div className="sharedf__cardbody">
         <span className="sharedf__name" title={name}>
           {name}
         </span>
-        <CardLine author={file.author} at={file.created_at} projectId={file.project_id} hint={file.thread_title} />
+        <span className="sharedf__meta" title={`${project} · ${file.thread_title}`}>
+          <span className="sharedf__project">
+            <ProjectTile
+              tone={projectTone(file.project_id ?? DEFAULT_PID)}
+              initial={projectInitial(project)}
+              size={14}
+            />
+            {project}
+          </span>
+          <span className="sharedf__chat">{file.thread_title}</span>
+        </span>
+        <time className="sharedf__when" dateTime={file.created_at}>
+          {when(file.created_at)}
+        </time>
+        <span className="sharedf__foot">
+          <span className="sharedf__who">
+            <Sender author={file.author} />
+          </span>
+          <SharedActions file={file} />
+        </span>
       </div>
     </li>
   );
 }
 
-/**
- * Every file sent in a chat, as cards by kind, project and name; one opens live over the list. Artifacts, open or
- * closed, are one more kind: listed from what the panel already holds, with the same project, search and order.
- * Inside a project's tab (`within`) it shows that project's only, under the project's own header.
- */
-export function FilesScreen({ within }: { within?: ProjectEntry } = {}) {
+/** Every file sent in a chat, as cards by kind, project and name; one opens live over the list. */
+export function FilesScreen() {
   const t = useT();
   const projects = useData((s) => s.projects);
   const [kind, setKind] = useState<Kind>("all");
-  const [picked, setProject] = useState("");
-  const project = within?.id ?? picked;
+  const [project, setProject] = useState("");
   const [order, setOrder] = useState<SharedOrder>("new");
   const [typed, setTyped] = useState("");
   const [query, setQuery] = useState("");
@@ -115,29 +127,26 @@ export function FilesScreen({ within }: { within?: ProjectEntry } = {}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [open, setOpen] = useState<number>();
-  const artifacts = useArtifacts({ project, query, order });
-  const showArtifacts = kind === "artifact";
 
   useEffect(() => {
     const wait = setTimeout(() => setQuery(typed.trim()), SEARCH_WAIT_MS);
     return () => clearTimeout(wait);
   }, [typed]);
 
-  // On Artifacts only the files' counts are asked for, so the other tabs keep theirs.
   const load = async (offset: number) => {
     setLoading(true);
     try {
       const r = await client.call("media.shared", {
-        ...(kind === "all" || kind === "artifact" ? {} : { kind }),
+        ...(kind === "all" ? {} : { kind }),
         ...(project === DEFAULT_PID ? { base: true } : project ? { project } : {}),
         ...(query ? { query } : {}),
         order,
         offset,
-        limit: showArtifacts ? 1 : PAGE,
+        limit: PAGE,
       });
-      setItems((prev) => (showArtifacts ? [] : offset ? [...prev, ...r.items] : r.items));
+      setItems((prev) => (offset ? [...prev, ...r.items] : r.items));
       setCounts(r.counts);
-      setMore(!showArtifacts && r.more);
+      setMore(r.more);
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -158,19 +167,18 @@ export function FilesScreen({ within }: { within?: ProjectEntry } = {}) {
   );
   const shown = open === undefined ? undefined : items[open];
   const total = counts ? counts.image + counts.video + counts.audio + counts.document : undefined;
-  const countOf = (k: Kind) => (k === "artifact" ? artifacts.length : k === "all" ? total : counts?.[k]);
+  const countOf = (k: Kind) => (k === "all" ? total : counts?.[k]);
 
-  const entries = projectEntries(projects);
   return (
-    <OneProject.Provider value={Boolean(within)}>
-      <div className="resv sharedf">
-        {shown && <SharedPreview file={shown} onBack={back} onStep={items.length > 1 ? step : undefined} />}
-        <SectionPage
-          className="sharedf__list"
-          label={t("nav.files")}
-          title={within ? undefined : t("nav.files")}
-          lead={t(showArtifacts ? "files.artifacts.lead" : "shared.lead")}
-          tabs={
+    <section className="resv sharedf" aria-label={t("nav.files")}>
+      {shown && <SharedPreview file={shown} onBack={back} onStep={items.length > 1 ? step : undefined} />}
+      <div className="sharedf__list">
+        <header className="resv__head">
+          <div className="resv__titles">
+            <h1 className="resv__title">{t("nav.files")}</h1>
+            <p className="resv__lead">{t("shared.lead")}</p>
+          </div>
+          <div className="resv__bar">
             <SegmentedControl
               label={t("shared.kinds")}
               value={kind}
@@ -178,83 +186,70 @@ export function FilesScreen({ within }: { within?: ProjectEntry } = {}) {
               options={KINDS.map((k) => ({
                 value: k.id,
                 label: (
-                  <span className="secpage__tab">
+                  <span className="resv__tab">
                     {t(k.label)}
-                    {countOf(k.id) !== undefined && <span className="secpage__count">{countOf(k.id)}</span>}
+                    {countOf(k.id) !== undefined && <span className="resv__count">{countOf(k.id)}</span>}
                   </span>
                 ),
               }))}
             />
-          }
-          tools={
+            <span className="resv__spacer" />
+            <SearchField
+              className="resv__search"
+              aria-label={t("shared.search")}
+              placeholder={t("shared.search")}
+              value={typed}
+              onChange={(e) => setTyped(e.currentTarget.value)}
+            />
             <Select
-              size="sm"
               className="sharedf__select"
               label={t("shared.order")}
               value={order}
               onValueChange={(v) => setOrder((v as SharedOrder | null) ?? "new")}
               options={ORDERS.map((o) => ({ value: o.id, label: t(o.label) }))}
             />
-          }
-          search={{ value: typed, onChange: setTyped, placeholder: t("shared.search") }}
-          scopes={
-            within || entries.length < 2
-              ? undefined
-              : {
-                  label: t("shared.project"),
-                  value: project || "all",
-                  onChange: (id) => setProject(id === "all" ? "" : id),
-                  options: [
-                    { id: "all", label: t("section.scope.all") },
-                    ...entries.map((p) => ({ id: p.id, label: p.name })),
-                  ],
-                }
-          }
-        >
-          <div className="sharedf__body">
-            {showArtifacts ? (
-              artifacts.length ? (
-                <ArtifactGrid items={artifacts} />
-              ) : (
-                <EmptyState
-                  icon={<Icons.LayoutGrid />}
-                  title={t(
-                    query
-                      ? "files.artifacts.emptySearch"
-                      : project
-                        ? "files.artifacts.emptyProject"
-                        : "files.artifacts.empty",
-                  )}
-                >
-                  {!query && !project ? t("files.artifacts.emptyText") : undefined}
-                </EmptyState>
-              )
-            ) : error ? (
-              <EmptyState icon={<Icons.TriangleAlert />} title={t("shared.error", { error })} />
-            ) : !items.length && !loading ? (
-              <EmptyState
-                icon={<Icons.Paperclip />}
-                title={t(query ? "shared.emptySearch" : kind === "all" ? "shared.empty" : "shared.emptyKind")}
-              >
-                {!query && kind === "all" ? t("shared.emptyText") : undefined}
-              </EmptyState>
-            ) : (
-              <ul className="sharedf__grid">
-                {items.map((f, i) => (
-                  <Card key={`${f.message_id}:${f.media_id}`} file={f} onOpen={() => setOpen(i)} />
-                ))}
-              </ul>
-            )}
-            {more && !error && (
-              <div className="sharedf__more">
-                <Button variant="secondary" size="sm" loading={loading} onClick={() => void load(items.length)}>
-                  {t("shared.more")}
-                </Button>
-              </div>
-            )}
+            <Select
+              className="sharedf__select"
+              label={t("shared.project")}
+              value={project}
+              onValueChange={(v) => setProject(v ?? "")}
+              options={[
+                { value: "", label: t("shared.allProjects") },
+                ...projectEntries(projects).map((p) => ({
+                  value: p.id,
+                  label: p.name,
+                  icon: <ProjectTile tone={projectTone(p.id)} initial={projectInitial(p.name)} size={16} />,
+                })),
+              ]}
+            />
           </div>
-        </SectionPage>
+        </header>
+        <div className="sharedf__body">
+          {error ? (
+            <EmptyState icon={<Icons.TriangleAlert />} title={t("shared.error", { error })} />
+          ) : !items.length && !loading ? (
+            <EmptyState
+              icon={<Icons.Paperclip />}
+              title={t(query ? "shared.emptySearch" : kind === "all" ? "shared.empty" : "shared.emptyKind")}
+            >
+              {!query && kind === "all" ? t("shared.emptyText") : undefined}
+            </EmptyState>
+          ) : (
+            <ul className="sharedf__grid">
+              {items.map((f, i) => (
+                <Card key={`${f.message_id}:${f.media_id}`} file={f} onOpen={() => setOpen(i)} />
+              ))}
+            </ul>
+          )}
+          {more && !error && (
+            <div className="sharedf__more">
+              <Button variant="secondary" size="sm" loading={loading} onClick={() => void load(items.length)}>
+                {t("shared.more")}
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
-    </OneProject.Provider>
+    </section>
   );
 }

@@ -26,7 +26,7 @@ test("what the setup adds, before the super-agent greeted the owner, is not told
   assert.ok(!llm.calls.some((c) => String(c.messages.at(-1)?.content).includes("just added")));
 });
 
-test("a project reaches Home; agent additions offer a passive review without an automatic model call", async () => {
+test("a project or an agent the owner adds reaches the super-agent in Home, which offers to adapt it", async () => {
   env.core.store.settings.set(GREETED_KEY, "1");
   const before = (await homeRuns()).length;
   const { project } = await env.client.call("projects.create", { name: "Northwind" });
@@ -40,8 +40,6 @@ test("a project reaches Home; agent additions offer a passive review without an 
 
   const count = (await homeRuns()).length;
   await env.client.call("agents.create", { slug: "scout-two", name: "Scout Two", role: "Researcher", prompt: "Dig." });
-  const pending = await env.client.call("agents.review_queue", {});
-  assert.ok(pending.agents.some((a) => a.agent === "scout-two"));
-  assert.equal((await homeRuns()).length, count);
-  assert.ok(env.core.store.notifications.hasUnread("agent", "agent-review:global"));
+  await waitFor(async () => (await homeRuns()).length > count, "a Home turn for the agent");
+  assert.ok(llm.calls.some((c) => /just added the agent .*Scout Two/.test(String(c.messages.at(-1)?.content))));
 });

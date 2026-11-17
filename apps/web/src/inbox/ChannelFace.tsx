@@ -1,5 +1,5 @@
 import type { Thread } from "@apx/protocol";
-import { Avatar, Tag } from "@apx/ui";
+import { Avatar, Tag, Tooltip } from "@apx/ui";
 import { KindIcon } from "../channels/KindIcon.tsx";
 import { CHANNEL_KINDS } from "../channels/kinds.ts";
 import { PersonAvatar } from "../channels/PersonAvatar.tsx";
@@ -13,11 +13,13 @@ export function ChannelFace({
   size = 32,
   slot = size,
   labelOnly = false,
+  showMark = false,
 }: {
   thread: Thread;
   size?: number;
   slot?: number;
   labelOnly?: boolean;
+  showMark?: boolean;
 }) {
   const t = useT();
   const person = useThreadPerson(thread);
@@ -31,8 +33,17 @@ export function ChannelFace({
         <KindIcon kind={channel} size={11} /> {label}
       </Tag>
     ) : null;
+  const markSize = Math.min(16, size);
+  const width = slot + (channel && showMark ? markSize + 4 : 0);
   return (
-    <span className="threadavatar" style={{ width: slot, minWidth: slot, height: slot }}>
+    <span className="threadavatar" style={{ width, minWidth: width, height: slot, gap: 4 }}>
+      {channel && showMark && (
+        <Tooltip content={label}>
+          <span className="threadavatar__channel" role="img" aria-label={label} style={{ display: "inline-flex" }}>
+            <KindIcon kind={channel} size={markSize} />
+          </span>
+        </Tooltip>
+      )}
       <PersonAvatar
         personId={person?.id}
         name={name}

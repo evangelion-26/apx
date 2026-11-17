@@ -1,4 +1,3 @@
-import "../../styles/chat-cards.css";
 import type { Part } from "@apx/protocol";
 import { Button, Icons } from "@apx/ui";
 import { useState } from "react";

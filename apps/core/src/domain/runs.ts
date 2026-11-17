@@ -25,8 +25,6 @@ export type Origin =
       thread_id: string;
       run_id: string;
       task_assignment?: { task: string; id: string };
-      /** The task (its id) this turn works on as its owner: it goes on until the task is delivered, no one-off report. */
-      on_task?: string;
     }
   | { kind: "surface"; id: string; title: string }
   /** A message on a channel (Telegram…): from the owner, or from a contact (then it is a third party's text). */
@@ -63,16 +61,12 @@ export type Origin =
   | { kind: "job"; job_id: string; command: string; state: RunState; exit_code: number | null }
   /** A command the agent suggested, which the owner ran in a terminal, has ended. */
   | { kind: "terminal"; terminal_id: string; command: string; exit_code: number | null }
-  /** The owner connected an app or channel an agent offered on a card in this chat (engine/connect-wake.ts). */
-  | { kind: "connected"; what: "integration" | "channel"; id: string; label: string; message_id: string }
   /** The owner let agents go on after a pause: with a fresh budget, or with no limit this round (DECISIONS.md#d-081). */
   | { kind: "go_on"; mode: "reset" | "release" }
   /** The agent's task turn ended with the task still in progress: APX starts its next part (engine/task-continue.ts). */
   | { kind: "task_continue"; task_id: string; title: string; part: number; of: number; from_run?: string }
   /** APX found the agent's task open with nothing running on it, and asks it once to go on (engine/task-stall.ts). */
   | { kind: "stalled_task"; task_id: string; title: string }
-  /** A reviewer returned a task that a project's coordinator started: the coordinator hears it (engine/task-work.ts). */
-  | { kind: "task_feedback"; task_id: string; title: string; agent_id: string; name: string; run_id: string }
   /** The owner added a project or an agent: the super-agent offers to adapt it (engine/added.ts). */
   | { kind: "added"; what: "project" | "agent"; id: string; name: string }
   /** The computer the agent started in this chat is up, or did not start (environments/ready.ts). */
@@ -126,12 +120,10 @@ export const runsOnComputer = (o: Origin): boolean => {
     case "go_on":
     case "job":
     case "terminal":
-    case "connected":
     case "routine":
     case "stalled_task":
     case "task_continue":
     case "task_result":
-    case "task_feedback":
     case "delegation_result":
     case "delegation_results":
       return true;
@@ -171,25 +163,6 @@ export function ownerAsked(
   if (ownerOrigin(o)) return true;
   if (o?.kind !== "input_answer" || depth >= 10) return false;
   return ownerAsked(askedIn(o.input_id), askedIn, depth + 1);
-}
-
-/** A task chat of a task the owner created themselves (an agent's task is not their word). */
-export const ownersTask = (tasks: { get(id: string): { created_by: string } | undefined }, taskId?: string): boolean =>
-  Boolean(taskId) && tasks.get(taskId ?? "")?.created_by === "owner";
-
-/**
- * The owner's own work, for the tools it gets: what ownerAsked says, a routine they scheduled (it runs their words)
- * and a task they created. An agent on its own has the tools it has when the owner talks to it (DECISIONS.md#d-223).
- */
-export function ownersWork(
-  o: Origin | undefined,
-  askedIn: (inputId: string) => Origin | undefined,
-  ownerTask: boolean,
-  depth = 0,
-): boolean {
-  if (ownerOrigin(o) || o?.kind === "routine" || ownerTask) return true;
-  if (o?.kind !== "input_answer" || depth >= 10) return false;
-  return ownersWork(askedIn(o.input_id), askedIn, false, depth + 1);
 }
 
 /** The session of the sub-thread where the super-agent checks words a channel could not vouch for (DECISIONS.md#d-144). */
@@ -292,17 +265,6 @@ export function runsRepo({ one, all, run }: Sql, bus: Bus) {
       return all(
         qb.selectFrom("runs").selectAll().where("thread_id", "=", threadId).orderBy("created_at", "desc").limit(limit),
       ).map(toRun);
-    },
-    /** Latest inserted run in a chat: rowid distinguishes starts that share a timestamp. */
-    latestId(threadId: string): string | undefined {
-      return one(
-        qb
-          .selectFrom("runs")
-          .select("id")
-          .where("thread_id", "=", threadId)
-          .orderBy(raw<number>`rowid`, "desc")
-          .limit(1),
-      )?.id;
     },
     /** Memory jobs can run long after their turn; select before the anchor, not from the newest chat page. */
     memoryWindow(anchor: RunRecord): RunRecord[] {
@@ -725,15 +687,14 @@ export function runsRepo({ one, all, run }: Sql, bus: Bus) {
           .map(toRun),
       };
     },
-    /** Runs completed after `since`, newest first, optionally through an inclusive window end. */
-    completedSince(since: string, until?: string): RunRecord[] {
+    /** Runs completed after `since`, newest first. */
+    completedSince(since: string): RunRecord[] {
       return all(
         qb
           .selectFrom("runs")
           .selectAll()
           .where("state", "=", "completed")
           .where("ended_at", ">", since)
-          .$if(until !== undefined, (q) => q.where("ended_at", "<=", until as string))
           .orderBy("ended_at", "desc"),
       ).map(toRun);
     },

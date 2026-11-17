@@ -12,8 +12,8 @@ type Closed = {
   v1: boolean;
   /** "Your disk is almost full", closed for this session only: it says so again next time while it lasts. */
   disk: boolean;
-  /** The id of the last welcome film closed on this device (shell/welcomeFilm.ts). */
-  welcome: string;
+  /** The welcome to v2 as the release, said once. */
+  welcome: boolean;
 };
 
 const KEY = "apx.corner";
@@ -27,10 +27,10 @@ function load(): Closed {
       update: "",
       v1: false,
       disk: false,
-      welcome: typeof raw.welcome === "string" ? raw.welcome : "",
+      welcome: raw.welcome === true,
     };
   } catch {
-    return { discord: false, star: false, update: "", v1: false, disk: false, welcome: "" };
+    return { discord: false, star: false, update: "", v1: false, disk: false, welcome: false };
   }
 }
 

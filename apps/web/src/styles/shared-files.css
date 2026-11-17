@@ -27,17 +27,13 @@
   list-style: none;
 }
 .sharedf__card {
-  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--apx-border);
-  border-radius: 14px;
+  border-radius: var(--apx-radius-md);
   background: var(--apx-surface);
-}
-.sharedf__card:hover {
-  border-color: var(--apx-border-strong, var(--apx-border));
 }
 .sharedf__open {
   display: block;
@@ -50,7 +46,7 @@
   position: relative;
   display: grid;
   place-items: center;
-  height: 120px;
+  aspect-ratio: 1;
   overflow: hidden;
   background: var(--apx-fill);
   color: var(--apx-fg-muted);
@@ -85,72 +81,69 @@
   flex-direction: column;
   gap: 4px;
   min-width: 0;
-  padding: 10px 12px 12px;
+  padding: 10px 10px 8px 12px;
 }
 .sharedf__name {
   overflow: hidden;
-  font-size: 13px;
+  font-size: var(--apx-text-sm);
   font-weight: var(--apx-weight-medium);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sharedf__line {
+.sharedf__meta {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
+  overflow: hidden;
   color: var(--apx-fg-muted);
-  font-size: 11px;
+  font-size: var(--apx-text-xs);
   white-space: nowrap;
 }
-.sharedf__sender {
-  display: inline-flex;
-  flex: 0 1 auto;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-.sharedf__sender > span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sharedf__line .sharedf__when::before {
-  margin-right: 4px;
+.sharedf__meta > * + *::before {
+  margin-right: 6px;
+  color: var(--apx-fg-subtle);
   content: "·";
 }
-.sharedf__when {
+.sharedf__project,
+.sharedf__sender {
+  display: inline-flex;
   flex: none;
-  font-variant-numeric: tabular-nums;
+  align-items: center;
+  gap: 5px;
 }
-.sharedf__line .projbadge {
-  flex: 0 4 auto;
-  min-width: 0;
-  margin-left: auto;
+.sharedf__chat {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* A card's actions float over its picture, shown while the card is pointed at or holds focus. */
-.sharedf__card > .sharedf__actions {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  border-radius: var(--apx-radius-sm);
-  background: var(--apx-surface);
-  box-shadow: var(--apx-shadow-sm);
-  opacity: 0;
-  transition: opacity 120ms;
+.sharedf__foot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin-top: 2px;
 }
-.sharedf__card:hover > .sharedf__actions,
-.sharedf__card:focus-within > .sharedf__actions {
-  opacity: 1;
+.sharedf__when {
+  color: var(--apx-fg-subtle);
+  font-size: var(--apx-text-xs);
+  font-variant-numeric: tabular-nums;
 }
-@media (hover: none) {
-  .sharedf__card > .sharedf__actions {
-    opacity: 1;
-  }
+.sharedf__who {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--apx-fg-muted);
+  font-size: var(--apx-text-xs);
+  white-space: nowrap;
+}
+.sharedf__who .sharedf__sender {
+  flex: 1;
+  min-width: 0;
+}
+.sharedf__who .sharedf__sender > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .sharedf__actions {
   display: inline-flex;
@@ -344,9 +337,4 @@
     border-top: 1px solid var(--apx-border);
     border-left: 0;
   }
-}
-.sharedf__facts .sharedf__project {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
 }

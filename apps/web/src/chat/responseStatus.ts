@@ -1,5 +1,5 @@
 import type { RunEndReason, RunState } from "@apx/protocol";
-import type { MessageKey, T } from "../i18n/index.ts";
+import type { MessageKey } from "../i18n/index.ts";
 
 type Report = { state: RunState; end_reason?: RunEndReason; issue?: "no_answer" | "actions_failed" };
 const STATE: Record<RunState, { status: "waiting" | "running" | "done" | "failed"; label: MessageKey }> = {
@@ -23,6 +23,7 @@ export function responseStatus(report: Report): {
   return STATE[report.state];
 }
 
-/** Which of its steps failed, when some did: the card says so instead of only "some actions failed". */
-export const failedLine = (failed: readonly string[] | undefined, t: T): string | undefined =>
-  failed?.length ? t("subthread.failedSteps", { steps: failed.join(", ") }) : undefined;
+export function responseTitle(report: Report): MessageKey {
+  if (report.end_reason === "step_limit" || report.end_reason === "deadline") return "chat.agentProgress";
+  return report.state === "completed" && report.issue !== "no_answer" ? "chat.agentResponse" : "chat.agentMessage";
+}

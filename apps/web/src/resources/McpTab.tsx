@@ -5,15 +5,13 @@ import { projectName } from "../data/identity.ts";
 import { setMcp, setMcpToolMode, toggleMcp, trustMcp } from "../data/resources.ts";
 import { useData } from "../data/state.ts";
 import { useT } from "../i18n/index.ts";
-import { OriginChip } from "./ByProject.tsx";
-import { DOT_KEY, mcpDot, STATUS_KEY } from "./labels.ts";
+import { mcpDot, STATUS_KEY } from "./labels.ts";
 import { McpDetail } from "./McpDetail.tsx";
 import { McpDialog } from "./McpDialog.tsx";
 import type { TabProps } from "./ResourcesView.tsx";
-import { ResourceRows, ScopedGroups, useInheritance } from "./ScopedGroups.tsx";
+import { ScopedGroups, useInheritance } from "./ScopedGroups.tsx";
 
-/** The owner's servers have one name each wherever they live: moving one into a project keeps it picked. */
-const keyOf = (s: McpServerStatus) => `${s.scope}:${s.scope === "project" ? (s.project_id ?? "") : ""}:${s.name}`;
+const keyOf = (s: McpServerStatus) => `${s.scope}:${s.project_id ?? ""}:${s.name}`;
 /** Every project gets it (an owner's server limited to one project belongs to that project). */
 const isGlobal = (s: McpServerStatus) => s.scope === "global" && !s.only;
 
@@ -144,13 +142,11 @@ export function McpTab({ projectId, query, scope, adding, setAdding, res, ownOnl
         description={s.off_here ? t("res.offHere") : s.tools ? t("mcp.tools", { n: s.tools }) : t(STATUS_KEY[s.status])}
         trailing={
           <>
-            {!projectId && <OriginChip project={isGlobal(s) ? undefined : s.project_id} offIn={s.off_in} />}
             <Tag>{s.transport}</Tag>
             <PermissionIndicator mode={s.tool_permission_mode} />
           </>
         }
         dot={mcpDot(s)}
-        dotLabel={t(DOT_KEY[mcpDot(s)])}
         muted={s.off_here || s.status === "disabled"}
         selected={keyOf(s) === picked}
         onClick={() => setPicked(keyOf(s))}
@@ -160,7 +156,6 @@ export function McpTab({ projectId, query, scope, adding, setAdding, res, ownOnl
 
   const newServer = adding && (
     <McpDialog
-      projectId={projectId ?? (scope !== "all" && scope !== "global" ? scope : undefined)}
       onClose={() => setAdding(false)}
       onSaved={async (name) => {
         setAdding(false);
@@ -209,8 +204,16 @@ export function McpTab({ projectId, query, scope, adding, setAdding, res, ownOnl
               ownOnly={ownOnly}
             />
           ) : (
-            // Globally one list, global ones first: each row says where it lives.
-            <ResourceRows>{groups.flatMap((g) => g.items).map(row)}</ResourceRows>
+            groups
+              .filter((g) => g.items.length)
+              .map((g) => (
+                <div key={g.title} className="resv__group">
+                  <div className="resv__grouptitle">
+                    {g.title} <span>{g.items.length}</span>
+                  </div>
+                  {g.items.map(row)}
+                </div>
+              ))
           )
         }
         detail={

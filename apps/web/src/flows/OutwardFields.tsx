@@ -29,7 +29,7 @@ export function NotifyFields({ n, update, values }: { n: Notify; update: (n: Flo
     return (
       <>
         <p className="fe-note">{t("flow.f.noChannels")}</p>
-        <Button variant="secondary" size="sm" onClick={() => go.newChannel()}>
+        <Button variant="secondary" size="sm" onClick={() => go.config("channels")}>
           {t("flow.f.connectChannel")}
         </Button>
       </>

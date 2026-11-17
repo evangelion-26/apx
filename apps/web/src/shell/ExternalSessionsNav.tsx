@@ -1,12 +1,9 @@
 import type { EngineStatus } from "@apx/protocol";
 import { EngineIcon, engineBrand, Icons } from "@apx/ui";
-import { useEffect, useMemo, useState } from "react";
-import { markAllRead } from "../data/actions.ts";
+import { useEffect, useState } from "react";
 import { rememberSidebar, setPrefs, usePrefs, useSidebarRows } from "../data/prefs.ts";
 import { useData } from "../data/state.ts";
 import { useT } from "../i18n/index.ts";
-import { unreadWhere } from "../inbox/groupThreads.ts";
-import { onlyFilter, soleFilter, useInboxFilter } from "../inbox/inboxFilter.ts";
 import { go, useNav } from "./nav.ts";
 import { orderItems, SidebarNavRow } from "./SidebarNavRow.tsx";
 import { SidebarOverflow, SidebarRowsGrip, SidebarSection } from "./SidebarSection.tsx";
@@ -15,20 +12,13 @@ import { SidebarOverflow, SidebarRowsGrip, SidebarSection } from "./SidebarSecti
  * Last opened engine first, with the same row actions and manual ordering as the other sections; past the rows the
  * owner dragged it to, the rest folds into "N more" like Projects.
  */
-export function ExternalSessionsNav({ rail, compact = false }: { rail: boolean; compact?: boolean }) {
+export function ExternalSessionsNav({ rail }: { rail: boolean }) {
   const t = useT();
   const folded = usePrefs((s) => s.externalSessionsFolded);
   const saved = usePrefs((s) => s.engineOrder);
   const engines = useData((s) => s.engines);
-  const threads = useData((s) => s.threads);
-  // Sessions of an outside engine are the chats that name it.
-  const unread = useMemo(() => unreadWhere(threads, (thread) => !!thread.engine), [threads]);
   const view = useNav((s) => s.view);
   const engineId = useNav((s) => s.engineId);
-  const filtered = useInboxFilter((f) => {
-    const sole = soleFilter(f);
-    return sole?.kind === "engines" ? sole.id : undefined;
-  });
   const rows = useSidebarRows("engines");
   const [moreOpen, setMoreOpen] = useState(false);
   useEffect(() => {
@@ -49,15 +39,7 @@ export function ExternalSessionsNav({ rail, compact = false }: { rail: boolean; 
     ids.splice(Math.max(0, Math.min(index, ids.length)), 0, id);
     setPrefs({ engineOrder: ids });
   };
-  // Picked, an engine narrows the Inbox to its sessions; its own screen (with the sessions on this computer) stays
-  // in the row's menu.
   const open = (id: string) => {
-    setMoreOpen(false);
-    rememberSidebar("engineOrder", id);
-    onlyFilter("engines", id);
-    go.inbox();
-  };
-  const sessions = (id: string) => {
     setMoreOpen(false);
     go.engine(id);
   };
@@ -70,23 +52,13 @@ export function ExternalSessionsNav({ rail, compact = false }: { rail: boolean; 
       rail={rail && !overflow}
       icon={<SessionIcon engine={engine.id} />}
       trailing={<EngineState engine={engine} />}
-      active={(view === "engine" && engineId === engine.id) || (view === "inbox" && filtered === engine.id)}
+      active={view === "engine" && engineId === engine.id}
       onPick={() => open(engine.id)}
       order={order}
       onMove={move}
       items={[
-        { label: t("nav.open"), icon: <Icons.Inbox />, onSelect: () => open(engine.id) },
-        { label: t("nav.engineSessions"), icon: <Icons.Terminal />, onSelect: () => sessions(engine.id) },
+        { label: t("nav.open"), icon: <Icons.Terminal />, onSelect: () => open(engine.id) },
         { label: t("nav.engineSettings"), icon: <Icons.Settings />, onSelect: () => go.config("external") },
-        {
-          label: t("inbox.markAllRead"),
-          icon: <Icons.CheckCheck />,
-          disabled: !unread.some((id) => threads[id]?.engine === engine.id),
-          onSelect: () => {
-            setMoreOpen(false);
-            markAllRead(unread.filter((id) => threads[id]?.engine === engine.id));
-          },
-        },
         { type: "separator" },
         ...orderItems(t, engine.id, order, move),
       ]}
@@ -96,29 +68,14 @@ export function ExternalSessionsNav({ rail, compact = false }: { rail: boolean; 
     <SidebarSection
       rail={rail}
       title={t("nav.externalSessions")}
-      compact={compact}
-      icon={<Icons.Terminal size={16} />}
-      count={shown.length}
-      running={shown.some((engine) => engine.logged_in)}
-      active={view === "engine"}
-      empty={t("nav.empty.sessions")}
-      menu={[
-        {
-          label: t("inbox.markAllRead"),
-          icon: <Icons.CheckCheck />,
-          disabled: unread.length === 0,
-          onSelect: () => markAllRead(unread),
-        },
-      ]}
       folded={folded}
       onToggle={() => {
         setMoreOpen(false);
         setPrefs({ externalSessionsFolded: !folded });
       }}
     >
-      {compact && shown.map((engine) => row(engine, true))}
-      {!compact && !hidden && shown.slice(0, cut).map((engine) => row(engine))}
-      {!compact && !hidden && rest.length > 0 && (
+      {!hidden && shown.slice(0, cut).map((engine) => row(engine))}
+      {!hidden && rest.length > 0 && (
         <SidebarOverflow
           rail={rail}
           title={t("nav.externalSessions")}
@@ -132,9 +89,7 @@ export function ExternalSessionsNav({ rail, compact = false }: { rail: boolean; 
           {rest.map((engine) => row(engine, true))}
         </SidebarOverflow>
       )}
-      {!compact && !hidden && !rail && (
-        <SidebarRowsGrip section="engines" total={shown.length} title={t("nav.externalSessions")} />
-      )}
+      {!hidden && !rail && <SidebarRowsGrip section="engines" total={shown.length} title={t("nav.externalSessions")} />}
     </SidebarSection>
   );
 }

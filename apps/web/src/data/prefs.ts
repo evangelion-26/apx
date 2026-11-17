@@ -36,29 +36,15 @@ export type Prefs = {
   engineOrder: string[];
   /** Rows each sidebar section shows before the rest folds into "N more" (0 = its minimum). */
   sidebarRows: SidebarRows;
-  /** How the Inbox's Chats tab lists them: one list (pinned, recent, archived), project → agent → chats, by time, or by project. */
-  /** The Inbox's tab: chats, tasks or routines. */
-  inboxTab: InboxTab;
-  /** Rows of the Inbox the owner opened (a chat's delegated chats, a task's chats, a section): closed until opened. */
-  inboxOpen: string[];
+  /** How the Inbox lists chats: project → agent → chats, by time, or by project. */
+  inboxView: InboxView;
   /** The Inbox lists routine runs that told something, besides the chats. */
   inboxRoutines: boolean;
-  /** Channel accounts whose chats the Inbox leaves out (an account picked on its own still shows). */
-  inboxHiddenChannels: string[];
-  /** The Inbox lists each channel account's chats together, under one row that unfolds. */
-  inboxByChannel: boolean;
   /** The Tasks screen shows one project's tasks (a nav project id) or every project's (""). */
   tasksProject: string;
   /** Columns the owner resized (px; 0 = the default) or folded away. */
   sidebarW: number;
   sidebarCollapsed: boolean;
-  /** Each sidebar section is one row whose items open beside it; off, sections are cards (only when the window is tall enough). */
-  sidebarCompact: boolean;
-  /** Sidebar views and sections the owner hid from it (ids from shell/sidebarParts.ts). */
-  navHidden: string[];
-  /** The owner's order of the sidebar's views and of its sections (ids; the rest keep their place after them). */
-  navOrder: string[];
-  sectionOrder: string[];
   /** Unfolded by the owner in a window narrow enough to show the icon rail on its own. */
   sidebarOpen: boolean;
   listW: number;
@@ -72,12 +58,7 @@ export type Prefs = {
   audioEndSound: boolean;
   /** Which notices make a sound as they arrive. */
   noticeSound: NoticeSound;
-  /** How the top bar shows the AI quotas and the system resources: with their figures, or as a small mark. */
-  quotaBar: BarShow;
-  resourcesBar: BarShow;
 };
-
-export type BarShow = "full" | "mini";
 
 /** `widths` are how many of the board's columns a tile spans (1 when absent). */
 export type BoardPrefs = {
@@ -92,7 +73,7 @@ export type SidebarRows = { channels: number; projects: number; engines: number 
 /** The fewest rows each sidebar section can be dragged down to, and what it shows until then. */
 export const SIDEBAR_MIN_ROWS: SidebarRows = { channels: 3, projects: 5, engines: 3 };
 
-export type InboxTab = "chats" | "tasks" | "routines";
+export type InboxView = "tree" | "activity" | "chats";
 
 const KEY = "apx.prefs";
 
@@ -111,26 +92,17 @@ const DEFAULTS: Prefs = {
   projectOrder: [],
   engineOrder: [],
   sidebarRows: { channels: 0, projects: 0, engines: 0 },
-  inboxTab: "chats",
-  inboxOpen: [],
+  inboxView: "tree",
   inboxRoutines: true,
-  inboxHiddenChannels: [],
-  inboxByChannel: false,
   tasksProject: "",
   sidebarW: 0,
   sidebarCollapsed: false,
-  sidebarCompact: true,
-  navHidden: [],
-  navOrder: [],
-  sectionOrder: [],
   sidebarOpen: false,
   listW: 0,
   panelW: 0,
   boards: {},
   audioEndSound: true,
   noticeSound: "all",
-  quotaBar: "full",
-  resourcesBar: "full",
 };
 
 function load(): Prefs {
@@ -158,22 +130,11 @@ function load(): Prefs {
         ? [...new Set(raw.engineOrder.filter((id): id is string => typeof id === "string"))]
         : [],
       sidebarRows: sidebarRowsOf(raw.sidebarRows),
-      inboxTab: raw.inboxTab === "tasks" || raw.inboxTab === "routines" ? raw.inboxTab : "chats",
-      inboxOpen: Array.isArray(raw.inboxOpen)
-        ? [...new Set(raw.inboxOpen.filter((id): id is string => typeof id === "string"))].slice(-500)
-        : [],
+      inboxView: raw.inboxView === "activity" || raw.inboxView === "chats" ? raw.inboxView : "tree",
       inboxRoutines: raw.inboxRoutines !== false,
-      inboxHiddenChannels: idsOf(raw.inboxHiddenChannels),
-      inboxByChannel: raw.inboxByChannel === true,
       tasksProject: typeof raw.tasksProject === "string" ? raw.tasksProject : "",
       sidebarW: typeof raw.sidebarW === "number" ? raw.sidebarW : 0,
       sidebarCollapsed: raw.sidebarCollapsed === true,
-      sidebarCompact: raw.sidebarCompact !== false,
-      navOrder: idsOf(raw.navOrder),
-      sectionOrder: idsOf(raw.sectionOrder),
-      navHidden: Array.isArray(raw.navHidden)
-        ? [...new Set(raw.navHidden.filter((id): id is string => typeof id === "string"))]
-        : [],
       sidebarOpen: raw.sidebarOpen === true,
       listW: typeof raw.listW === "number" ? raw.listW : 0,
       panelW: typeof raw.panelW === "number" ? raw.panelW : 0,
@@ -183,16 +144,10 @@ function load(): Prefs {
         raw.noticeSound === "requests" || raw.noticeSound === "messages" || raw.noticeSound === "off"
           ? raw.noticeSound
           : "all",
-      quotaBar: raw.quotaBar === "mini" ? "mini" : "full",
-      resourcesBar: raw.resourcesBar === "mini" ? "mini" : "full",
     };
   } catch {
     return DEFAULTS;
   }
-}
-
-function idsOf(raw: unknown): string[] {
-  return Array.isArray(raw) ? [...new Set(raw.filter((id): id is string => typeof id === "string"))] : [];
 }
 
 function sidebarRowsOf(raw: unknown): SidebarRows {
@@ -265,15 +220,9 @@ export function rememberSidebar(key: "projectOrder" | "engineOrder", id: string,
   setPrefs({ [key]: [id, ...order.filter((current) => current !== id)].slice(0, 100) });
 }
 
-/** "Alex Lee" → "AL", "You" → "YO", "lufer (@lufer)" → "LU": letters and digits only, a handle in brackets left out. */
+/** "Alex Lee" → "AL", "You" → "YO". */
 export function initialsOf(name: string): string {
-  const words = name
-    .replace(/\([^)]*\)/g, " ")
-    .split(/\s+/)
-    .map((w) => w.replace(/[^\p{L}\p{N}]/gu, ""))
-    .filter(Boolean);
-  // Only a handle: its own letters.
-  const parts = words.length ? words : [name.replace(/[^\p{L}\p{N}]/gu, "")];
+  const parts = name.trim().split(/\s+/).filter(Boolean);
   const first = parts[0] ?? "";
   const last = parts.length > 1 ? (parts[parts.length - 1] ?? "") : "";
   return ((first[0] ?? "") + (last ? last[0] : (first[1] ?? ""))).toUpperCase() || "?";

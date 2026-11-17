@@ -211,8 +211,7 @@ test("jobs.list names what each queued turn carries, never its text", async () =
     });
     const { running } = await env.client.call("jobs.list", { finished: 5 });
     const byId = new Map(running.map((j) => [j.id, j]));
-    // The conversation it comes from opens there: no text of it.
-    assert.deepEqual(byId.get(result.id)?.from, { kind: "delegation_result", name: "Scout", thread });
+    assert.deepEqual(byId.get(result.id)?.from, { kind: "delegation_result", name: "Scout" });
     assert.deepEqual(byId.get(owner.id)?.from, { kind: "user" });
     assert.ok(!JSON.stringify(running).includes("Part checked."));
   } finally {

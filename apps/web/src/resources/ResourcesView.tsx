@@ -1,10 +1,10 @@
-import { Button, Icons, Menu, SegmentedControl } from "@apx/ui";
-import { type ReactNode, useEffect, useState } from "react";
-import { SectionPage } from "../common/SectionPage.tsx";
+import { Button, Icons, Menu, SearchField, SegmentedControl } from "@apx/ui";
+import { type ReactNode, useState } from "react";
 import { type ProjectEntry, projectName } from "../data/identity.ts";
 import { useData } from "../data/state.ts";
 import { type MessageKey, useT } from "../i18n/index.ts";
 import { go, type ResourceTab, useNav } from "../shell/nav.ts";
+import { BrowserConsents } from "./BrowserConsents.tsx";
 import { ExtensionsTab } from "./ExtensionsTab.tsx";
 import { IntegrationsTab } from "./IntegrationsTab.tsx";
 import { ENGINE_LABEL, SKILL_ENGINES, type SkillEngine } from "./labels.ts";
@@ -42,21 +42,10 @@ export function ResourcesView({ project }: { project?: ProjectEntry }) {
   const t = useT();
   const projects = useData((s) => s.projects);
   const tab = useNav((s) => s.resourcesTab);
-  const variable = useNav((s) => s.variable);
-  const variableIn = useNav((s) => s.variableIn);
   const [query, setQuery] = useState("");
   const [picked, setScope] = useState<ScopeFilter>("all");
   const [adding, setAdding] = useState(false);
   const [ownOnly, setOwnOnly] = useState(false);
-  // A link to a variable (from where it is used) finds it: its name searched, in every scope.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the same name in another project is a new link
-  useEffect(() => {
-    if (!variable) return;
-    setQuery(variable);
-    setScope("all");
-    setOwnOnly(false);
-    setAdding(false);
-  }, [variable, variableIn]);
   const [engines, setEngines] = useState<ReadonlySet<SkillEngine>>(new Set());
   const projectId = project && !project.isDefault ? project.id : undefined;
   // Default's resources are the global ones, which every project takes: no other scope to pick there.
@@ -166,81 +155,78 @@ export function ResourcesView({ project }: { project?: ProjectEntry }) {
   else if (tab === "variables") body = <VariablesTab {...ctx} />;
   else body = <ExtensionsTab adding={adding} setAdding={setAdding} onChanged={() => void res.loadExtensions()} />;
 
-  const add = def.add && (
-    <Button
-      size="sm"
-      title={t("section.res.addHint")}
-      leadingIcon={<Icons.Plus size={14} />}
-      onClick={() => setAdding(true)}
-    >
-      {t(def.add)}
-    </Button>
-  );
   return (
-    <SectionPage
-      className={projectId ? "resv resv--project" : "resv"}
-      bodyClassName="resv__body"
-      label={t("nav.resources")}
-      // Inside a project its tab already names it: no title, and adding sits with the filters.
-      title={project ? undefined : t("nav.resources")}
-      lead={t("res.lead")}
-      action={
-        project || !def.add
-          ? undefined
-          : { label: t(def.add), hint: t("section.res.addHint"), onClick: () => setAdding(true) }
-      }
-      tabs={
-        <SegmentedControl
-          label={t("res.tabs")}
-          value={tab}
-          onValueChange={(v) => {
-            setQuery("");
-            setAdding(false);
-            go.resourcesTab(v as ResourceTab);
-          }}
-          options={TABS.map((x) => ({
-            value: x.id,
-            label: (
-              <span className="secpage__tab">
-                {t(x.label)}
-                {counts[x.id] !== undefined && <span className="secpage__count">{counts[x.id]}</span>}
-              </span>
-            ),
-          }))}
-        />
-      }
-      tools={
-        <>
-          {!projectId && filters}
-          {project && add}
-        </>
-      }
-      search={def.search ? { value: query, onChange: setQuery, placeholder: t(def.search) } : undefined}
-      scopes={
-        !projectId && !inDefault && tab !== "extensions"
-          ? {
-              label: t("res.scope"),
-              value: scope,
-              onChange: setScope,
-              options: [
-                { id: "all", label: t("section.scope.all") },
-                { id: "global", label: t("res.scope.global"), icon: <Icons.Globe size={14} /> },
-                ...projects.filter((p) => p.path && p.registered !== false).map((p) => ({ id: p.id, label: p.name })),
-              ],
-            }
-          : undefined
-      }
-      under={
-        ((projectId && filters) || note) && (
-          <div className="secpage__under">
-            {projectId && filters}
-            {note && <p className="resv__inherit">{note}</p>}
+    <section className={projectId ? "resv resv--project" : "resv"} aria-label={t("nav.resources")}>
+      <header className="resv__head">
+        {!projectId && (
+          <div className="resv__titles">
+            <h1 className="resv__title">{t("nav.resources")}</h1>
+            <p className="resv__lead">{t("res.lead")}</p>
           </div>
-        )
-      }
-    >
-      {body}
-    </SectionPage>
+        )}
+        <div className="resv__bar">
+          <SegmentedControl
+            label={t("res.tabs")}
+            value={tab}
+            onValueChange={(v) => {
+              setQuery("");
+              setAdding(false);
+              go.resourcesTab(v as ResourceTab);
+            }}
+            options={TABS.map((x) => ({
+              value: x.id,
+              label: (
+                <span className="resv__tab">
+                  {t(x.label)}
+                  {counts[x.id] !== undefined && <span className="resv__count">{counts[x.id]}</span>}
+                </span>
+              ),
+            }))}
+          />
+          <span className="resv__spacer" />
+          {!project && <BrowserConsents />}
+          {def.search && (
+            <SearchField
+              className="resv__search"
+              aria-label={t(def.search)}
+              placeholder={t(def.search)}
+              value={query}
+              onChange={(e) => setQuery(e.currentTarget.value)}
+            />
+          )}
+          {def.add && (
+            <Button size="sm" leadingIcon={<Icons.Plus size={14} />} onClick={() => setAdding(true)}>
+              {t(def.add)}
+            </Button>
+          )}
+        </div>
+      </header>
+      <div className="resv__under">
+        {filters}
+        {!projectId && !inDefault && tab !== "extensions" && (
+          <fieldset className="resv__scopes">
+            <legend className="resv__scopelabel">{t("res.scope")}</legend>
+            {[
+              { id: "all", label: t("res.scope.all") },
+              { id: "global", label: t("res.scope.global") },
+              ...projects.filter((p) => p.path && p.registered !== false).map((p) => ({ id: p.id, label: p.name })),
+            ].map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                className={scope === c.id ? "resv__chip is-on" : "resv__chip"}
+                aria-pressed={scope === c.id}
+                onClick={() => setScope(c.id)}
+              >
+                {c.label}
+              </button>
+            ))}
+          </fieldset>
+        )}
+        {note && <p className="resv__inherit">{note}</p>}
+      </div>
+      <div className="resv__body">{body}</div>
+    </section>
   );
 }
 

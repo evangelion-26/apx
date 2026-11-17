@@ -25,14 +25,13 @@ import { continueSession, sessionState } from "./hooks/continueSession";
 import { useThread } from "./hooks/useThread";
 import type { Thread, Workspace } from "./hooks/useWorkspace";
 import { t } from "./i18n";
-import type { Message, RoutineRun } from "./protocol";
+import type { Message } from "./protocol";
 import { BrowserConsents } from "./ui/BrowserConsents";
 import { ChatComposer } from "./ui/ChatComposer";
 import { ChatMenu } from "./ui/ChatMenu";
 import { ChatMessage } from "./ui/ChatMessage";
 import { ComputerProgress } from "./ui/chat/ComputerProgress";
-import { QueueTray } from "./ui/chat/QueueTray";
-import { RoutineRunsSheet, runWhen } from "./ui/chat/RoutineRunsSheet";
+import { LineLabel } from "./ui/chat/WaitingControls";
 import { EngineIcon } from "./ui/EngineIcon";
 import { Icon } from "./ui/Icon";
 import { ActivityPill, AgentAvatar, BottomSheet, EmptyState, IconButton, ListRow, Spinner } from "./ui/kit";
@@ -54,9 +53,6 @@ export function ChatScreen({
   make,
   onMade,
   onOpenThread,
-  routineRuns,
-  onOpenRun,
-  onRoutine,
 }: {
   creds: Creds;
   onUnpair: () => void;
@@ -75,12 +71,6 @@ export function ChatScreen({
   onMade: (thread: Thread) => void;
   /** Opens another chat by id: a delegation's or a consult's, from its card. */
   onOpenThread?: (id: string) => void;
-  /** A routine's runs, newest first, for the picker of a routine's chat. */
-  routineRuns?: (routineId: string, limit?: number) => Promise<RoutineRun[]>;
-  /** Shows another run of the same routine in this chat's place. */
-  onOpenRun?: (id: string) => void;
-  /** Opens a routine's page. */
-  onRoutine?: (routineId: string) => void;
 }) {
   const theme = useTheme();
   const s = useStyles();
@@ -90,10 +80,6 @@ export function ChatScreen({
   const agent = data.agents.find((item) => item.id === thread.agent_ids[0]);
   const contact = channelIdentity(thread, data);
   const name = thread.engine ? thread.title : (agent?.name ?? thread.title);
-  // A routine's chat is one of its runs: its header names the routine and which run, and switches to another.
-  const routineId = thread.kind === "routine" ? thread.routine_id : undefined;
-  const routine = routineId ? data.routines.find((item) => item.id === routineId) : undefined;
-  const title = routineId ? (routine?.name ?? routineName(thread)) : thread.title || name;
   const fresh = isNewChat(base.id);
   // What is typed stays as the chat's draft until it is sent.
   const [text, setTextNow] = useState(() => draftOf(base.id));
@@ -102,7 +88,7 @@ export function ChatScreen({
     keepDraft(base.id, value);
     setTextNow(value);
   };
-  const [sheet, setSheet] = useState<"model" | "menu" | "attach" | "runs" | "browser">();
+  const [sheet, setSheet] = useState<"model" | "menu" | "attach">();
   // Files and voice notes of a new chat are uploaded to no chat yet; they go with its first message.
   const files = useAttachments(live.client, fresh ? undefined : base.id);
   const voice = useVoiceNote({
@@ -188,9 +174,7 @@ export function ChatScreen({
       ? doing
       : live.state === "input-required"
         ? t("waitsForYourAnswer")
-        : routineId
-          ? runWhen(thread.updated_at)
-          : threadContext(thread, data);
+        : threadContext(thread, data);
   const avatar = engine ? (
     <EngineIcon engine={engine} size={22} />
   ) : (
@@ -205,67 +189,45 @@ export function ChatScreen({
       keyboardVerticalOffset={insets.top}
     >
       <View style={s.header}>
-        <IconButton icon="ChevronLeft" label={t("back")} size={20} onPress={onBack} style={s.headerButton} />
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={routineId ? t("rtPickRun", { name: title }) : name}
-          onPress={routineId ? () => setSheet("runs") : onSwitch}
-          style={s.who}
-        >
+        <IconButton icon="ChevronLeft" label={t("back")} size={22} onPress={onBack} />
+        <Pressable accessibilityRole="button" accessibilityLabel={name} onPress={onSwitch} style={s.who}>
           <View>
             {engine ? (
-              <EngineIcon engine={engine} size={30} />
+              <EngineIcon engine={engine} size={36} />
             ) : contact ? (
-              <PersonAvatar person={contact.person} name={contact.name} size={30} channel={contact.type} />
+              <PersonAvatar person={contact.person} name={contact.name} size={36} channel={contact.type} />
             ) : (
-              <AgentAvatar name={name} blob={agent?.blob} id={agent?.id} size={30} />
+              <AgentAvatar name={name} blob={agent?.blob} id={agent?.id} size={36} />
             )}
             {live.online ? <View style={s.dot} /> : null}
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text numberOfLines={1} style={s.title}>
-              {title}
+              {thread.title || name}
             </Text>
             <View style={s.status}>
-              {working ? <Spinner size={11} /> : null}
+              {working ? <Spinner size={12} /> : null}
               <Text numberOfLines={1} style={s.statusText} accessibilityLiveRegion="polite">
                 {status}
               </Text>
-              {routineId ? <Icon name="ChevronDown" size={12} color={theme.fgSubtle} /> : null}
             </View>
           </View>
         </Pressable>
-        {routineId ? (
-          <IconButton
-            icon="History"
-            label={t("rtPickRun", { name: title })}
-            size={17}
-            color={theme.fgMuted}
-            style={s.headerButton}
-            onPress={() => setSheet("runs")}
-          />
-        ) : (
-          <IconButton
-            icon="SquarePen"
-            label={t("newChat")}
-            size={17}
-            color={theme.fgMuted}
-            style={s.headerButton}
-            onPress={onNewChat}
-          />
-        )}
+        <IconButton icon="SquarePen" label={t("newChat")} size={18} color={theme.fgMuted} onPress={onNewChat} />
         {/* A new chat has nothing to rename, archive or delete until its first message makes it. */}
         {fresh ? null : (
           <IconButton
             icon="MoreHorizontal"
             label={t("chatOptions")}
-            size={17}
+            size={18}
             color={theme.fgMuted}
-            style={s.headerButton}
             onPress={() => setSheet("menu")}
           />
         )}
       </View>
+      {!fresh && settled ? (
+        <BrowserConsents client={live.client} thread={base.id} agents={data.agents} threads={data.threads} />
+      ) : null}
       {!settled ? (
         <View style={s.empty} />
       ) : showsStartHint({ rows: rows.length, working, fresh, loaded: Boolean(live.thread) }) ? (
@@ -289,11 +251,23 @@ export function ChatScreen({
             contentContainerStyle={s.transcript}
             // The list is inverted: its header sits below the newest message, where the panel shows activity.
             ListHeaderComponent={
-              working ? (
-                <ActivityPill tone="brand" label={doing} from={avatar} />
-              ) : live.state === "input-required" ? (
-                <ActivityPill tone="danger" label={t("isWaitingForYou", { name })} />
-              ) : null
+              <>
+                {working ? (
+                  <ActivityPill tone="brand" label={doing} from={avatar} />
+                ) : live.state === "input-required" ? (
+                  <ActivityPill tone="danger" label={t("isWaitingForYou", { name })} />
+                ) : null}
+                {line.length ? <LineLabel name={name} /> : null}
+                {line.map((message) => (
+                  <ChatMessage
+                    key={message.id}
+                    message={message}
+                    agents={data.agents}
+                    respond={live.respond}
+                    queue={{ actions: live.waiting, line }}
+                  />
+                ))}
+              </>
             }
             ListHeaderComponentStyle={s.activity}
             renderItem={({ item }) =>
@@ -333,8 +307,6 @@ export function ChatScreen({
       )}
       {live.computer ? <ComputerProgress stage={live.computer} /> : null}
       {live.error ? <Text style={s.error}>{live.error}</Text> : null}
-      {/* What waits for the agent's next turn sits on the composer, in the order it will run. */}
-      <QueueTray line={line} name={name} actions={live.waiting} />
       <ChatComposer
         text={text}
         onChangeText={setText}
@@ -374,26 +346,6 @@ export function ChatScreen({
           ))}
         </BottomSheet>
       ) : null}
-      {sheet === "browser" ? (
-        <BrowserConsents
-          client={live.client}
-          thread={base.id}
-          agents={data.agents}
-          threads={data.threads}
-          onClose={() => setSheet(undefined)}
-        />
-      ) : null}
-      {sheet === "runs" ? (
-        <RoutineRunsSheet
-          thread={thread}
-          threads={data.threads}
-          name={title}
-          {...(routineRuns ? { loadRuns: routineRuns } : {})}
-          onPick={(id) => onOpenRun?.(id)}
-          {...(routineId && routine && onRoutine ? { onRoutine: () => onRoutine(routineId) } : {})}
-          onClose={() => setSheet(undefined)}
-        />
-      ) : null}
       {sheet === "model" ? (
         <ModelSheet
           current={choice}
@@ -418,7 +370,6 @@ export function ChatScreen({
           onClose={() => setSheet(undefined)}
           onApps={onApps}
           onSwitch={onSwitch}
-          onBrowser={() => setSheet("browser")}
           update={async (patch) => {
             await live.client.call("threads.update", { thread: thread.id, ...patch });
           }}
@@ -462,17 +413,16 @@ const useStyles = makeStyles((theme) => ({
   // The message a shared file led to, lit for a moment.
   flash: { borderRadius: theme.radiusMd, backgroundColor: theme.brandSoft },
   header: {
-    height: 52,
+    height: 60,
     flexDirection: "row",
     alignItems: "center",
-    gap: 2,
-    paddingLeft: 2,
-    paddingRight: 4,
+    gap: 4,
+    paddingLeft: 4,
+    paddingRight: 8,
     borderBottomWidth: 1,
     borderColor: theme.border,
   },
-  headerButton: { width: 40, height: 40 },
-  who: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 9 },
+  who: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 10 },
   dot: {
     position: "absolute",
     right: -1,
@@ -484,8 +434,8 @@ const useStyles = makeStyles((theme) => ({
     borderWidth: 2,
     borderColor: theme.bg,
   },
-  title: { color: theme.fg, fontSize: 15, fontWeight: "600" },
-  status: { flexDirection: "row", alignItems: "center", gap: 4 },
+  title: { color: theme.fg, fontSize: 16, fontWeight: "600" },
+  status: { flexDirection: "row", alignItems: "center", gap: 6 },
   statusText: { color: theme.fgSubtle, fontSize: 12, flexShrink: 1 },
   transcript: { paddingHorizontal: 16, paddingVertical: 12 },
   empty: { flex: 1, justifyContent: "center" },

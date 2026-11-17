@@ -33,7 +33,6 @@ test("See what's new opens the chat that tells the update, and goes once it is r
   await expect(hint).toBeVisible();
   await expect(hint).toBeInViewport();
   await pill.click();
-  // The chat opens beside the list, named after it.
-  await expect(page.getByRole("region", { name: "Novedades de APX 9.9.9" })).toBeVisible();
+  await expect(page.locator(".topbar__crumb.is-last")).toHaveText("Novedades de APX 9.9.9");
   await expect(pill).toBeHidden();
 });

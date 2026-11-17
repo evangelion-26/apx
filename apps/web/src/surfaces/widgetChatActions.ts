@@ -63,7 +63,7 @@ export async function openWidgetChat(surface: SurfaceSummary): Promise<void> {
   const threadId = usable(chatsMade()[surface.id]) ?? usable(surface.thread_id) ?? (await newChat(surface));
   if (!threadId) return;
   rememberChat(surface.id, threadId);
-  open.set({ surfaceId: surface.id, threadId, topic: undefined });
+  open.set({ surfaceId: surface.id, threadId });
 }
 
 /** Starts the widget's chat over: a new session, which from then on is the widget's chat. */
@@ -71,7 +71,7 @@ export async function restartChat(surface: SurfaceSummary): Promise<void> {
   const threadId = await newChat(surface);
   if (!threadId) return;
   rememberChat(surface.id, threadId);
-  open.set({ surfaceId: surface.id, threadId, topic: undefined });
+  open.set({ surfaceId: surface.id, threadId });
 }
 
 /** Chats opened here to ask for a new widget: one closed before anything was written in it is not kept. */
@@ -79,7 +79,7 @@ export const asking = new Set<string>();
 
 export const close = () => {
   const { threadId } = open.get();
-  open.set({ surfaceId: undefined, threadId: undefined, topic: undefined });
+  open.set({ surfaceId: undefined, threadId: undefined });
   if (!threadId || !asking.has(threadId)) return;
   asking.delete(threadId);
   void client
@@ -92,53 +92,16 @@ export const close = () => {
  * Asks an agent for a new widget for a project's board: a new chat with it in that project (so it works with the
  * project's context), its first words ready, floating over the page; the widget shows on top as soon as it is made.
  */
-export function askForWidget(
+export async function askForWidget(
   agentId: string,
   projectId: string | undefined,
   words: { title: string; draft: string } = { title: tr("widget.askTitle"), draft: tr("widget.askDraft") },
-): Promise<void> {
-  return startAsking(agentId, projectId, words, undefined);
-}
-
-/**
- * A new chat with an agent about something that is not a widget (reviewing a project with it): it opens over the
- * page the same way, its first words ready for the owner to change or send, and goes if closed untouched. A retry
- * passes the same `key`, so a chat the core made before its answer was lost is not made twice; one made after the
- * owner left (`wanted` false) is deleted instead of opening over another page. False when it failed.
- */
-export async function askAbout(
-  agentId: string,
-  projectId: string,
-  words: { title: string; draft: string },
-  o: { key: string; wanted(): boolean },
-): Promise<boolean> {
-  try {
-    const thread = await createThread({ agentId, projectId, title: words.title }, o.key);
-    if (!o.wanted()) {
-      void deleteThread(thread.id);
-      return true;
-    }
-    asking.add(thread.id);
-    keepDraft(thread.id, words.draft);
-    open.set({ surfaceId: undefined, threadId: thread.id, topic: words.title });
-    return true;
-  } catch (e) {
-    notify(tr("error.change", { error: errText(e) }));
-    return false;
-  }
-}
-
-async function startAsking(
-  agentId: string,
-  projectId: string | undefined,
-  words: { title: string; draft: string },
-  topic: string | undefined,
 ): Promise<void> {
   try {
     const thread = await createThread({ agentId, ...(projectId ? { projectId } : {}), title: words.title });
     asking.add(thread.id);
     keepDraft(thread.id, words.draft);
-    open.set({ surfaceId: undefined, threadId: thread.id, topic });
+    open.set({ surfaceId: undefined, threadId: thread.id });
   } catch (e) {
     notify(tr("error.change", { error: errText(e) }));
   }

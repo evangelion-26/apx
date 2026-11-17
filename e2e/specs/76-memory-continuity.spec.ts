@@ -147,7 +147,7 @@ test("a late maintenance failure after closing stays dismissed and a reopened pa
     const retry = reopened.getByRole("button", { name: "Revisar duplicados ahora" });
     await expect(retry).toBeEnabled();
     await retry.click();
-    await expect(reopened.getByText("Nada nuevo para guardar", { exact: true })).toBeVisible();
+    await expect(reopened.getByText("Completado", { exact: true })).toBeVisible();
     expect(attempts).toBe(2);
   } finally {
     waiting.release();
@@ -161,9 +161,9 @@ test("memory history shows the old text before restoring a revision", async ({ p
   const note = await rpc<Memory>("memory.add", { scope: "global", text: initial });
   await rpc("memory.add", { id: note.id, scope: "global", text: changed });
   await open(page, "#project=~default&tab=memory");
-  await page.locator(".memory__row").filter({ hasText: changed }).getByRole("button").click();
-  const panel = page.getByRole("complementary", { name: "Nota de memoria" });
-  const previous = panel.locator(".memory__history li").filter({ hasText: "Revisión 1" });
+  const row = page.locator(".memory__row").filter({ hasText: changed });
+  await row.getByRole("button", { name: "Fuentes e historial" }).click();
+  const previous = row.locator(".memory__history li").filter({ hasText: "Revisión 1" });
   await expect(previous.getByText(initial, { exact: true })).toBeVisible();
   await previous.getByRole("button", { name: "Restaurar esta revisión" }).click();
   await expect
@@ -171,7 +171,7 @@ test("memory history shows the old text before restoring a revision", async ({ p
       async () => (await rpc<{ memories: Memory[] }>("memory.list", {})).memories.find((m) => m.id === note.id)?.text,
     )
     .toBe(initial);
-  await expect(panel.locator(".memnote__text")).toHaveText(initial);
+  await expect(page.locator(".memory__text").getByText(initial, { exact: true })).toBeVisible();
 });
 
 test("memory maintenance reports failure, releases busy controls and retries the intended action", async ({ page }) => {
@@ -209,7 +209,7 @@ test("memory maintenance reports failure, releases busy controls and retries the
     await expect(backfill).toBeEnabled();
     await expect(dream).toBeEnabled();
     await backfill.click();
-    await expect(dialog.getByText("Falló", { exact: true })).toBeVisible();
+    await expect(dialog.getByText("Falló · Review needs retry", { exact: true })).toBeVisible();
     await dream.click();
     await expect.poll(() => calls.length).toBe(3);
     expect(calls).toEqual([
@@ -247,7 +247,7 @@ test("memory jobs poll without overlapping, recover a status failure and stop af
   );
   try {
     const dialog = await memoryDialog(page);
-    const row = dialog.locator(".res__row").filter({ hasText: "Recuerdos de " });
+    const row = dialog.locator(".res__row").filter({ hasText: "Guardar recuerdos duraderos" });
     await expect(row.getByText("En espera", { exact: true })).toBeVisible();
     await page.clock.fastForward(5000);
     await expect.poll(() => reads).toBe(2);
@@ -260,7 +260,7 @@ test("memory jobs poll without overlapping, recover a status failure and stop af
     await failedResponse;
     await expect(row.getByText("Trabajando", { exact: true })).toBeVisible();
     await page.clock.fastForward(5000);
-    await expect(row.getByText("Nada nuevo para guardar", { exact: true })).toBeVisible();
+    await expect(row.getByText("Completado", { exact: true })).toBeVisible();
     await page.clock.fastForward(15000);
     expect(reads).toBe(4);
     await dialog.getByRole("button", { name: "Revisar duplicados ahora" }).click();
@@ -291,12 +291,12 @@ test("an older initial memory status cannot overwrite the result of a manual mai
     const dialog = await memoryDialog(page);
     await expect.poll(() => reads).toBe(1);
     await dialog.getByRole("button", { name: "Revisar duplicados ahora" }).click();
-    const row = dialog.locator(".res__row").filter({ hasText: "Recuerdos de " });
-    await expect(row.getByText("Nada nuevo para guardar", { exact: true })).toBeVisible();
+    const row = dialog.locator(".res__row").filter({ hasText: "Guardar recuerdos duraderos" });
+    await expect(row.getByText("Completado", { exact: true })).toBeVisible();
     const initial = page.waitForResponse((r) => r.url().endsWith("/rpc/memory.status"));
     waiting.release();
     await initial;
-    await expect(row.getByText("Nada nuevo para guardar", { exact: true })).toBeVisible();
+    await expect(row.getByText("Completado", { exact: true })).toBeVisible();
     await expect(row.getByText("En espera", { exact: true })).toHaveCount(0);
   } finally {
     waiting.release();

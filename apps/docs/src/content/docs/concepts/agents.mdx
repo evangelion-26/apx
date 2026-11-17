@@ -20,28 +20,6 @@ An agent has a name, a face, a role, instructions and tools it may use. For exam
 a developer can implement a change and a reviewer can check it. These are roles you configure, not a promise that a
 task succeeds without review. Start from the project's **Agents** tab to create an agent or import a template.
 
-## Review agents after changes
-
-Starting with 2.14, APX includes one native guide, **apx-agents**, for creating, editing, cloning, importing and
-reviewing agents. Existing requests for `apx-agent-prompts` load this same guide; there is no second active copy.
-Ask your super-agent to review an agent in its destination project, especially after copying it from another team.
-Shared project facts belong in AGENTS.md, not in reusable instructions that carry another project's paths or people.
-
-APX groups changed agents into review notices. Internal creation, edits, clones and imports are covered, as are
-external changes to registered projects' `.apc/agents/*.md` files once the existing project watcher indexes them.
-It does not scan arbitrary Markdown or unregistered folders. Existing agents are baselined when the detector first
-starts; later changes, including changes found after restarting, become pending reviews. An alert means the definition
-changed, not that APX found an error. No model is called for each save, and the notice never blocks work.
-
-Ask “Review my changed agents, without editing them.” The super-agent uses `agent_set` with `review: true`, checks
-small batches in context, and proposes before/after changes. You choose which to apply. Reviewed changes use the
-revision read before the proposal: newer instructions or project context cause a conflict instead of being overwritten.
-APX checks again after preparing the file replacement, immediately before committing it. This is optimistic
-concurrency protection, not an exclusive lock on external editors: avoid saving that same file while applying a
-review. A reviewed update clears its pending review; a later change opens a new one. If nothing needs changing, the
-super-agent can mark it reviewed with your agreement. Reviews are passive by default: no autonomous rewrite or
-background semantic review runs merely because a file was saved.
-
 ## Keep project context with the work
 
 APX projects follow [APC (Agent Project Context)](/concepts/projects/): a root `AGENTS.md` and an `.apc/` folder.
@@ -127,7 +105,7 @@ and follow up until they close. When a decision needs the owner, ask once, clear
 | `description` | What the agent is for. It is also put in front of the instructions when the body does not already say it. |
 | `icon` | The agent's blobo (`orbita`, `menta`, `cobalto`…). |
 | `emoji` | An optional emoji, kept with the agent (files written by other tools often have one). |
-| `parent` | The agent it reports to, by its slug (or its full id). Leave it out and the agent reports to Home. APX tells the agent who it answers to and its `area`, so its instructions never need to name people. |
+| `parent` | The agent it reports to, by its slug (or its full id). Leave it out and the agent reports to Home. |
 | `area` | The area it belongs to, for the org chart (`product`, `engineering`…). |
 | `autonomy` | Its permission mode: `manual`, `auto` (the default), `accept_edits`, `plan` or `total`. See [Autonomy and safety](/concepts/autonomy/). |
 | `personality` | How it sounds, apart from what it does. Up to 1,000 characters. |
@@ -192,8 +170,7 @@ Change fields with `key=value` pairs (`name`, `role`, `slug`, `parent`, `blob`):
 
 <Terminal command="apx agents set 3f9a1c0d7e21-vera parent=lucia blob=cobalto">{`Vera (3f9a1c0d7e21-vera) · vera · Marketing`}</Terminal>
 
-Archive one. Its file moves to `.apc/agents/.archived/`, never erased, and its chats stay. An agent that answers a
-channel is archived only once you choose who answers that channel instead:
+Archive one. Its file moves to `.apc/agents/.archived/`, never erased, and its chats stay:
 
 <Terminal command="apx agents archive 3f9a1c0d7e21-vera">{`archived; file moved to ~/work/acme-store/.apc/agents/.archived/vera.md`}</Terminal>
 
@@ -219,11 +196,6 @@ The **Agents** tab draws your team two ways:
 
 - **Hierarchy**: a tree built from each agent's `parent:`. Agents with no parent report to Home.
 - **Areas and roles**: the agents grouped by their `area:`, with the areas and roles of the project.
-
-An agent's instructions are for its craft: how it works and what it checks. Who it answers to and what it may
-publish are APX's to say. To check that none of your agents' instructions still holds work back (people named as
-bosses, "do not push unless authorized", approvals a reviewer must give), ask your super-agent "Review my agents'
-instructions": it tells you what it would change in each, and changes nothing until you say yes.
 
 <Shot name="org" alt="The Areas and roles view: Product, Engineering and Growth areas with their roles and agents" caption="Agents › Areas and roles" />
 
@@ -253,20 +225,11 @@ agent talking to itself. Asking a worker of the same name again from the same ch
 instructions it was first given; one still at work stays apart.
 
 The answer comes back inside the same turn if it is quick, or later as a new turn that wakes the caller. The chat
-shows a row with what was asked, its progress and how long it took; a click on it unfolds the whole report, with a way
-into the delegated agent's chat at its foot.
+shows a card with the progress, the whole report (folded until you open it) and how long it took.
 
-Writing again to a session that is still working on an earlier request reaches it at its next step, inside the work
-already under way, as your own words do when you press Enter: a "pause" or a change of plan applies right away
-instead of waiting for that work to end, and one answer comes back for both. Several tasks given to the same session
-at once still wait their turn.
-
-A delegated agent does not answer "on it" first: it does the work as far as its tools reach and replies once, ending
-with the same four lines every time (Status: done, partial or blocked, Result, Evidence: what its tools showed,
-Unblock: what it needs, or none). Partial means part is done and it says what is left; blocked means nothing more is
-in its reach, such as access, a login or your decision, after it tried. It never hands the task back to whoever asked
-for it. On its own task an agent does not report this way: the task, a teammate's answer or a review there is work it
-carries on with until it closes the task. With you, agents answer directly, without restating your
+A delegated agent does not answer "on it" first: it does the work and replies once, ending with the same four
+lines every time (Status: done or blocked, Result, Evidence: what its tools showed, Unblock: what it needs, or none).
+It never hands the task back to whoever asked for it. With you, agents answer directly, without restating your
 question.
 
 When an agent asks two or more helpers in the same turn, their answers reach it together: each card that is in says

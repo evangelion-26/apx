@@ -190,7 +190,6 @@ export function createChromeTabs(deps: {
       return;
     }
     if (!t) return;
-    t.page.onEvent(method, params);
     if (method === "Page.loadEventFired") loads.get(tab)?.();
     if (method === "Page.navigatedWithinDocument") {
       t.page.forget(true);
@@ -276,18 +275,17 @@ export function createChromeTabs(deps: {
       case "browser.click": {
         const p = browserMethods["browser.click"].params.parse(raw);
         const t = await drive(p.tab, p.by);
-        const dialog = await t.page.click(p.ref);
-        if (dialog) await refresh(t);
-        else await settle(t, 1500);
-        return { ok: true, url: t.url, ...(dialog ? { dialog } : {}) };
+        await t.page.click(p.ref);
+        await settle(t, 1500);
+        return { ok: true, url: t.url };
       }
       case "browser.type": {
         const p = browserMethods["browser.type"].params.parse(raw);
         const t = await drive(p.tab, p.by);
-        const dialog = await t.page.type(p.ref, p.text, p.submit);
-        if (p.submit && !dialog) await settle(t, 2000);
+        await t.page.type(p.ref, p.text, p.submit);
+        if (p.submit) await settle(t, 2000);
         else await refresh(t);
-        return { ok: true, url: t.url, ...(dialog ? { dialog } : {}) };
+        return { ok: true, url: t.url };
       }
       case "browser.screenshot": {
         const p = browserMethods["browser.screenshot"].params.parse(raw);
@@ -300,7 +298,6 @@ export function createChromeTabs(deps: {
       case "browser.text": {
         const p = browserMethods["browser.text"].params.parse(raw);
         const t = await read(p.tab);
-        t.page.assertNoDialog();
         const send = sendTo(t.chrome);
         const frames = await send<{ frameTree: { frame: { id: string } } }>("Page.getFrameTree");
         // An isolated world: the page's scripts cannot see or patch this read.

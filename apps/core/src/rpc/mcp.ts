@@ -25,10 +25,7 @@ export function mcpHandlers(mcp: Mcp, store: Store, switchable: (name: string) =
       if (!d) throw notFound(`MCP server ${server}`);
       try {
         const tools = await mcp.toolPermissions(d);
-        return {
-          tools: tools.map(({ name, key, permanent, approved }) => ({ name, key, permanent, approved })),
-          mode: mcp.toolMode(d),
-        };
+        return { tools: tools.map(({ name, key, permanent, approved }) => ({ name, key, permanent, approved })) };
       } catch (e) {
         // A server that does not start is an answer to "what are its tools", not a failed call.
         if (e instanceof CallError && e.shape.code === ErrorCode.Unavailable) return { tools: [], error: e.message };
@@ -52,15 +49,6 @@ export function mcpHandlers(mcp: Mcp, store: Store, switchable: (name: string) =
       if (!target) throw notFound(`MCP tool ${tool}`);
       store.approvals.grant(target, "always", "");
       return { ok: true };
-    },
-    "mcp.toolMode": ({ scope, server, project, mode }) => {
-      const d = mcp.find(scope, server, project);
-      if (!d) throw notFound(`MCP server ${server}`);
-      if (!d.enabled || !mcp.config.trusted(d)) throw badRequest("approve and enable this server first");
-      mcp.setToolMode(d, mode);
-      const s = mcp.status(project ?? d.only).find((x) => x.scope === scope && x.name === server);
-      if (!s) throw new Error("server vanished");
-      return { server: s };
     },
     "mcp.logs": ({ scope, server, project, lines }) => {
       const d = mcp.find(scope, server, project);
@@ -99,21 +87,9 @@ export function mcpHandlers(mcp: Mcp, store: Store, switchable: (name: string) =
     "mcp.set": ({ name, server, project }) => {
       if (Array.isArray(server?.args) && JSON.stringify(server.args).includes("secret://"))
         throw badRequest(ARGS_SECRET);
-      if (server?.project && !store.projects.get(server.project)) throw notFound(`project ${server.project}`);
-      if (project && (server?.project !== undefined || server?.off_in !== undefined))
-        throw badRequest("a repository server cannot set private availability");
-      for (const p of server?.off_in ?? []) if (!store.projects.get(p)) throw notFound(`project ${p}`);
       if (!project) {
-        const before = mcp.config.global().find((d) => d.name === name);
-        const { off_in: offIn, ...definition } = server ?? {};
-        mcp.config.setGlobal(name, server ? definition : null);
-        // Where a global one is on is kept per project (mcp.toggle's switches): the dialog sets them all at once.
-        if (offIn && server && !server.project) mcp.config.setOffIn(name, offIn);
-        // A server that goes, or moves into one project, leaves no switches behind.
-        if (!server || server.project) mcp.config.setOffIn(name, []);
-        const after = mcp.config.global().find((d) => d.name === name);
-        // Availability alone does not change a tool contract; credential-specific grants stay separately bound.
-        mcp.drop({ scope: "global", name }, Boolean(before && after && before.hash === after.hash));
+        mcp.config.setGlobal(name, server);
+        mcp.drop({ scope: "global", name });
         return { servers: mcp.status() };
       }
       if (!store.projects.get(project)?.path) throw notFound(`project ${project}`);

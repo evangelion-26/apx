@@ -34,7 +34,6 @@ export function followsOwner(origin: Origin | undefined): boolean {
     case "delegation_results":
     case "go_on":
     case "terminal":
-    case "connected":
       return true;
     case undefined:
     case "agent":
@@ -44,7 +43,6 @@ export function followsOwner(origin: Origin | undefined): boolean {
     case "mail":
     case "job":
     case "task_continue":
-    case "task_feedback":
     case "stalled_task":
     case "added":
     case "computer_ready":

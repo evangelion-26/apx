@@ -6,24 +6,15 @@
 // - delivery ticks: return the platform's id from `send`, and call `io.receipt` when it reaches their device or is
 //   read (WhatsApp does; the Telegram Bot API tells neither, so its messages stop at "sent");
 // - reactions in: call `io.reaction` when someone puts or takes off an emoji on a message (it never wakes the agent);
-// - reactions out: set `caps.reactions` and `react`, so the agent's "REACT ❤️" lands on their message (channel setting
-//   `reactions`); set `Inbound.ref` when the id to react to is not `external_id`;
+// - reactions out: set `caps.reactions` and `react`, so a closing "ok"/"gracias" can get an emoji (channel setting
+//   `closers`); set `Inbound.ref` when the id to react to is not `external_id`;
 // - presence (online / last seen) and avatars, where the platform shares them.
-import type { ChannelInfo, ParsedParams, Result } from "@apx/protocol";
-
-export type MailHistoryRequest = Omit<ParsedParams<"channels.email_history">, "channel">;
-export type MailHistoryResult = Result<"channels.email_history">;
-export type RestoreMail = (message: Inbound) => Promise<"stored" | "already_seen" | "skipped" | "failed">;
-
+import type { ChannelInfo } from "@apx/protocol";
 import type { Inbound, InboundAction, InboundReaction, Presentation } from "../domain/channels.ts";
 
 export type InboundFile = NonNullable<Inbound["files"]>[number];
 
 export type ChannelConfig = Omit<ChannelInfo, "token_set" | "token_hint" | "status" | "error" | "account">;
-
-/** Who answers a channel's contacts and rooms: its own agent when it has one, else the channel's. */
-export const contactAgentOf = (cfg: Pick<ChannelConfig, "agent_id" | "contacts_agent_id">): string =>
-  cfg.contacts_agent_id ?? cfg.agent_id;
 
 type AdapterCaps = {
   /** Shows "typing…" while the agent works. */
@@ -85,10 +76,10 @@ export type AdapterIO = {
    */
   room?(r: { id: string; name: string; left?: boolean }): void;
   /** Connected as this account; `owner` is the owner's own address on it (a linked device is the owner). */
-  identified?(who: { account: string; owner?: string; name?: string }): void;
+  identified?(who: { account: string; owner?: string }): void;
   /**
    * This channel's public address for its platform's webhooks (`<base>/hooks/<channel id>`), when the owner turned
-   * one on (an account's settings › Public address); none otherwise. It can change while the channel runs (ngrok).
+   * one on (Settings › Channels › Public address); none otherwise. It can change while the channel runs (ngrok).
    */
   hookUrl?(): string | undefined;
   signal: AbortSignal;
@@ -118,7 +109,7 @@ export interface ChannelAdapter {
    * Starts receiving; resolves with the account it runs as (a bot's @name) once connected, or `waiting` when linking or
    * connecting goes on in the background (a QR to scan, a socket's handshake) and `io.status` says when it runs.
    */
-  start(io: AdapterIO): Promise<{ account?: string; name?: string; waiting?: boolean }>;
+  start(io: AdapterIO): Promise<{ account?: string; waiting?: boolean }>;
   stop(): Promise<void>;
   /** The channel is removed: drop its persisted state, even if start was never called. */
   forget?(): Promise<void>;
@@ -127,13 +118,9 @@ export interface ChannelAdapter {
    * adapter checks the platform's signature itself and refuses (401) what it cannot verify; nothing else guards it.
    */
   webhook?(req: HookRequest, signal?: AbortSignal): Promise<HookResponse>;
-  /** Of these addresses, those the platform knows as another one (a private id and its number): `from` is `to`. */
-  sameAs?(addresses: string[]): Promise<Array<{ from: string; to: string }>>;
   /** Text, then `files` (the presentation's media, already read). */
   /** `address`: the conversation's address as the platform uses it, when it is not the one given (a number fixed). */
   send(conversation: string, p: Presentation, files?: OutFile[]): Promise<{ external_id?: string; address?: string }>;
-  /** Reads a bounded page of retained mail, quietly, through the same durable inbox and security checks. */
-  mailHistory?(request: MailHistoryRequest, receive: RestoreMail): Promise<MailHistoryResult>;
   /** A new mail the owner wrote (a mailbox channel): sent from its address as they reviewed it, signed. */
   compose?(mail: { to: string[]; cc: string[]; subject: string; body: string }): Promise<{ external_id?: string }>;
   typing?(conversation: string): Promise<void>;

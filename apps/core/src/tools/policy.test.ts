@@ -181,8 +181,7 @@ test("rules: a delegated helper keeps its own rules over its caller's mode, and 
 });
 
 test("shell: a command that only reads here never waits, outside content in the turn or not, in any mode", () => {
-  const store = { settings: { read: () => ({ about: "", timezone: "" }) } };
-  const shell = shellTools(store as never, "/nonexistent-apx-home", () => 7440).find((t) => t.name === "shell");
+  const shell = shellTools({} as never, "/nonexistent-apx-home", () => 7440).find((t) => t.name === "shell");
   assert.ok(shell);
   const run = (command: string, a: AgentRecord) => authorize(shell, { command }, a, true).kind;
   const reads = [
@@ -210,58 +209,25 @@ test("shell: a command that only reads here never waits, outside content in the 
     assert.equal(run(c, agent({ autonomy: "manual" })), "confirm", c);
     assert.equal(run(c, agent({ autonomy: "accept_edits" })), "confirm", c);
   }
-  // Publishing a branch runs in Auto; a release (a tag) or a forced push waits (DECISIONS.md#d-208).
-  assert.equal(run("git push origin main", agent()), "allow");
-  assert.equal(run("git push origin main", agent({ autonomy: "manual" })), "confirm");
-  assert.equal(run("git push origin v2.13.4", agent()), "confirm");
-  assert.equal(run("git push --force origin main", agent()), "confirm");
+  assert.equal(run("git push origin main", agent()), "confirm");
 });
 
-test("total and a rule 'auto' skip a card, except one a call keeps (DECISIONS.md#d-143, DECISIONS.md#d-203)", () => {
+test("total and a rule 'auto' skip a card, except one a call keeps (DECISIONS.md#d-143)", () => {
   const always = tool("routine_like", "local", "always");
   const kept = defineTool({ ...base("login_like", "local", "always"), keepsCard: () => "grant" as const });
   const setting = defineTool({ ...base("setting_like", "local", "always"), ownerSetting: () => true });
-  const key = defineTool({
-    ...base("key_like", "local", "always"),
-    ownerSetting: () => true,
-    keepsCard: () => "card" as const,
-  });
   for (const who of [agent({ autonomy: "total" }), agent({ rules: { irreversible: "auto" } })]) {
     assert.equal(authorize(always, {}, who, true).kind, "allow");
     assert.equal(authorize(kept, {}, who, false).kind, "confirm");
-    // A setting the owner asks for follows the mode; one that keeps its card does not.
-    assert.equal(authorize(setting, {}, who, true).kind, "allow");
-    assert.equal(authorize(key, {}, who, false).kind, "confirm");
+    assert.equal(authorize(setting, {}, who, false).kind, "confirm");
   }
-  assert.equal(authorize(setting, {}, agent({}), false).kind, "confirm");
 });
 
 test("copying the owner's logins keeps its card in total, a grant counting only for the shared profile", () => {
-  const login = browserTools({} as never, "/path/to/home", () => new Set()).find(
-    (t) => t.name === "browser_use_my_login",
-  );
+  const login = browserTools({} as never, "/path/to/home").find((t) => t.name === "browser_use_my_login");
   assert.ok(login?.keepsCard);
   const total = (browser_profile: AgentRecord["browser_profile"]) => agent({ autonomy: "total", browser_profile });
   assert.equal(authorize(login, { domain: "example.com" }, total("shared"), false).kind, "confirm");
   assert.equal(login.keepsCard({ domain: "example.com" }, total("shared")), "grant");
   assert.equal(login.keepsCard({ domain: "example.com" }, total("isolated")), "card");
-});
-
-test("a release waits for the owner even in Total; a plain push too once the owner asked to be asked", () => {
-  let publish: "auto" | "ask" | undefined;
-  const store = { settings: { read: () => ({ about: "", timezone: "", publish }) } };
-  const shell = shellTools(store as never, "/nonexistent-apx-home", () => 7440).find((t) => t.name === "shell");
-  assert.ok(shell);
-  const run = (command: string, a: AgentRecord) => authorize(shell, { command }, a, false).kind;
-  const total = agent({ autonomy: "total" });
-  // Hard: a tag, a GitHub release, a forced push (DECISIONS.md#d-208).
-  for (const c of ["git push origin v2.13.4", "gh release create v2.13.4", "git push --force origin main"])
-    assert.equal(run(c, total), "confirm", c);
-  // Medium: publishing a branch runs on its own, in Auto and in Total.
-  assert.equal(run("git push origin main", total), "allow");
-  assert.equal(run("git push origin main", agent()), "allow");
-  publish = "ask";
-  assert.equal(run("git push origin main", total), "confirm");
-  assert.equal(run("git push origin main", agent()), "confirm");
-  assert.equal(run("git status", total), "allow", "only publishing asks");
 });

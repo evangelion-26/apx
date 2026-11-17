@@ -56,14 +56,10 @@ test("the owner's answer to a question another agent's request raised does not l
   assert.ok(!note);
 });
 
-// In Auto a contact's note changes at the owner's word, so the woken run stays theirs (DECISIONS.md#d-203).
-test("the owner's answer to a question in their own request still lets the change through", async () => {
+test("the owner's answer to a question in their own request still lets the change reach their card", async () => {
   const t = await env.client.call("threads.create", { kind: "loose", agent_id: "superagent", title: "Own" });
   await env.client.call("threads.send", { thread: t.id, text: "check with the owner, then change her note" });
   await answerLate(t.id);
-  const note = () => env.client.call("contacts.list", {}).then((r) => r.persons.find((p) => p.id === sister)?.note);
-  assert.equal(
-    await waitFor(async () => ((await note()) === "Changed" ? "Changed" : undefined), "the changed note"),
-    "Changed",
-  );
+  const [card] = (await pendingIn(t.id)).filter((i) => i.kind === "confirm");
+  assert.equal(card?.tool, "apx_settings");
 });

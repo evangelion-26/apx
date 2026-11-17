@@ -367,16 +367,7 @@ test("an agent's @mention in a task comment asks that agent, and the answer come
   assert.deepEqual(store.threads.context(consult?.id ?? "").consult?.asker, { agent: "vera", thread: chat.id });
   await env.settle(consult?.id ?? "");
   await env.settle(chat.id);
-  const fromRoby = store.messages
-    .list(chat.id, 50)
-    .filter((m) => m.author.kind === "agent" && m.author.id === "superagent");
-  // Vera's chat shows the consult where she asked (its card), then the answer handed to her.
-  const [card, back] = fromRoby;
-  assert.equal(fromRoby.length, 2);
-  assert.deepEqual(
-    card?.parts.map((p) => p.type === "subthread" && p.thread_id),
-    [consult?.id],
-  );
+  const back = store.messages.list(chat.id, 50).find((m) => m.author.kind === "agent" && m.author.id === "superagent");
   assert.match(JSON.stringify(back?.parts), /Roby (answered|could not answer) your question/);
   const reply = back?.parts.find((p) => p.type === "text");
   const child = store.runs.list(consult?.id ?? "")[0];
@@ -686,17 +677,16 @@ test("deleting a task takes its history and conversation; subtasks and the agent
   await assert.rejects(env.client.call("tasks.delete", { task: t.id }), /not found|task/);
 });
 
-test("a task's chat decides where code work goes without asking the owner, and reuses a worktree before adding one", async () => {
+test("a task's chat asks the owner once where code work goes and reuses a worktree before adding one", async () => {
   const t = await env.client.call("tasks.create", { title: "Fix the export button", project });
   const block = taskBlock(env.core.store, { id: "th_probe", task_id: t.id, kind: "loose" }) ?? "";
-  // The project's own rule or note first; otherwise the agent decides and keeps it for the team.
-  assert.match(block, /Where code work goes: as this project's AGENTS\.md or a note says/);
+  // The options are meanings, not fixed English labels: the agent words them in the owner's language.
   assert.match(
     block,
-    /decide yourself, never asking the owner: a folder that is not a git repository is worked in place/,
+    /ask_owner with five short options written in the language you speak with the owner: a worktree now,/,
   );
-  assert.match(block, /Save what you chose with remember \(scope project\), so every agent does the same/);
-  assert.doesNotMatch(block, /ask_owner with five short options/);
+  assert.doesNotMatch(block, /"Worktree now"|"Here now"/);
+  assert.match(block, /save an "always" with remember \(scope project\) and do not ask again/);
   assert.match(
     block,
     /first git worktree list and the branches on this task's subject, and go on in the one that exists/,

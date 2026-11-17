@@ -100,20 +100,14 @@ Releé los archivos a mano, de todos los proyectos o de uno:
 
 ## Preparación opcional
 
-La tarjeta **Revisar el proyecto** del Resumen dice qué le falta al proyecto (un objetivo escrito, tareas o chats
-por donde empezar, agentes sin rol o instrucciones) y **Hablarlo con** su agente líder (o Home) abre un chat sobre la
-página, con el primer mensaje listo para que lo cambies o lo mandes: el agente repasa con vos el objetivo, el
-contexto, las tareas y el equipo, te dice qué falta y te propone un primer paso. Un chat que cerrás sin escribir nada
-no se guarda.
-
-**Al crear un agente, avisarme si falta contexto** (en la configuración del proyecto, o al crearlo) hace que el
-formulario de un agente nuevo te avise si no tiene rol o instrucciones, o si el proyecto no tiene un objetivo
-escrito. Viene apagado y nunca frena el chat ni la creación de agentes.
+**Revisar contexto del proyecto** ayuda a convertir el contexto, memoria, tareas y chats existentes en un primer
+paso concreto. Podés preparar un resumen o enviárselo al agente que lidera el proyecto (o a Home) para empezar.
+Las ofertas proactivas se activan solo si querés; cerrar la ayuda nunca bloquea el chat ni la creación de agentes.
 
 Al crear un agente, **Revisar borrador con el contexto del proyecto** puede proponer instrucciones faltantes.
 Revisá el antes y el después completos y aceptá explícitamente para aplicarlas al borrador sin guardar y sin
 cambios desde la revisión. No reescribe agentes existentes ni otorga permisos; guardar el agente sigue siendo otra
-acción. Si cambiaste el borrador mientras tanto, revisalo otra vez. El texto del proyecto en la propuesta sigue
+acción. Si cambiaste el borrador mientras tanto, revisalo otra vez. El texto del proyecto en el resumen sigue
 siendo información de referencia, no autorización.
 
 ## Carpetas de solo lectura
@@ -161,43 +155,6 @@ agentes trabajan en cualquier lado y no se puede borrar. Le ponés nombre durant
 después; sigue siendo el proyecto base se llame como se llame. Cuando quieras agentes que trabajen en una carpeta
 puntual, creá un proyecto para esa carpeta.
 
-## Subproyectos
-
-Un proyecto puede tener **subproyectos**, de un solo nivel: un subproyecto no tiene subproyectos propios. El proyecto
-base también puede tenerlos, así diez clientes, sitios o tiendas comparten el equipo que ya tenés en vez de sumar
-agentes nuevos para cada uno.
-
-Un subproyecto es un proyecto como cualquier otro: su carpeta con `AGENTS.md` y `.apc/`, sus chats, tareas, rutinas,
-apps, archivos y su memoria. Lo que lo hace subproyecto es que además toma de su proyecto padre:
-
-| Del padre | Cómo |
-|---|---|
-| Agentes | Los agentes del padre trabajan en él: chatean, toman sus tareas y rutinas y se les delega ahí. Si se lo piden en el subproyecto, trabajan en la carpeta del subproyecto, con su `AGENTS.md` y su memoria. Un subproyecto también puede tener agentes propios. |
-| Variables | Un `secret://NAME` que el subproyecto no tiene usa el valor propio del padre y, si no, el global. |
-| Skills y servidores MCP | Los `.apc/skills/` y `.apc/mcps.json` del padre cuentan también en el subproyecto. |
-| Apps | Las apps del padre aparecen junto a las del subproyecto. |
-
-Si los dos tienen algo con el mismo nombre, gana el del subproyecto. **La memoria nunca se hereda**: las notas del
-padre son del padre. Un subproyecto del proyecto base toma los agentes del proyecto base (los globales), que ya
-trabajan en todos lados, y sus apps.
-
-En **Recursos**, la caja **Por proyecto** de una skill o un servidor MCP lista cada proyecto al que llega, con sus
-subproyectos indentados debajo y un switch por fila. Apagarla en un subproyecto la deja activa en el proyecto de donde
-viene.
-
-<Terminal command={`apx projects create "Acme Site" --parent p_3f9a1c0d7e21`}>{`Acme Site (p_5c1e7a9b2d40) · ~/work/acme-store/acme-site`}</Terminal>
-
-Sin `--path`, la carpeta de un subproyecto va dentro de la del padre (`acme-store/acme-site`); un subproyecto del
-proyecto base (`--parent base`) va en la carpeta de APX, como cualquier proyecto sin carpeta. `apx projects set
-<project> --parent <project>` mueve un proyecto aparte adentro de otro, y también **Mover dentro de** en su menú de
-la barra lateral (clic derecho o "···"), que lista los proyectos a los que puede ir, el base incluido. No puede ser un
-proyecto que ya tiene subproyectos, el mismo proyecto ni otro subproyecto.
-
-Para **separarlo en un proyecto aparte**, elegí **Separar en un proyecto aparte** en su menú, o corré `apx projects detach <project>` (o `apx projects set <project>
---parent none`). Conserva su carpeta, sus agentes, sus chats y su memoria, y deja de tomar los agentes y recursos del
-padre. Si quitás un padre de APX, cada subproyecto suyo queda como proyecto aparte. Qué proyecto es padre de cuál lo
-guarda APX, nunca las carpetas.
-
 ## Lo que APX guarda de su lado
 
 La carpeta del proyecto es tuya. Todo lo que APX necesita y no es parte del estándar queda en el home de APX
@@ -215,13 +172,8 @@ Los hilos de código son la excepción: trabajan en la carpeta de tu proyecto a 
 ## Adentro de un proyecto
 
 Abrí un proyecto desde la barra lateral y vas a ver sus pestañas: **Resumen**, **Chats**, **Agentes**, **Tareas**,
-**Rutinas**, **Archivos**, **Directorio**, **Memoria** y **Recursos**. El Resumen es el proyecto de un vistazo:
-cuatro números (chats y sin leer, lo que te espera, rutinas y recursos) sobre el Tablero con los widgets que fijaste,
-y al lado, siempre en este orden, la tarjeta para revisar el proyecto, lo que te espera, los últimos chats, los
-agentes y los subproyectos. En el teléfono, o con el Tablero a todo el ancho, las tarjetas van debajo del Tablero.
-**Archivos** es el [Archivos](/es/office/chat/#todo-lo-compartido-en-archivos) de la barra lateral, solo con este
-proyecto: lo que se mandó en sus chats, por tipo, y en **Artefactos** los widgets, apps y páginas web que hicieron sus
-agentes. **Directorio** es la carpeta del proyecto y, si tiene una propia, su **Git**.
+**Rutinas**, **Archivos**, **Memoria** y **Recursos**. El Resumen es el proyecto de un vistazo: un Board con los
+widgets que fijaste, lo que está corriendo ahora, el equipo, algunos números y los últimos chats.
 
 <Shot name="project" alt="La pestaña Overview de Acme Store: un Board con un widget de ventas y un checklist de lanzamiento, el equipo y los chats recientes" caption="Acme Store › Resumen" />
 

@@ -33,8 +33,8 @@ test("a variable value can be replaced without showing the old value, then remov
   await expect(page.getByText("NORTHWIND_REPLACE")).toBeVisible();
   await expect(page.getByText("northwind-old-value")).toBeHidden();
 
-  await page.getByRole("button", { name: "Editar NORTHWIND_REPLACE" }).click();
-  const replace = page.getByRole("dialog", { name: "Editar NORTHWIND_REPLACE" });
+  await page.getByRole("button", { name: "Reemplazar el valor de NORTHWIND_REPLACE" }).click();
+  const replace = page.getByRole("dialog", { name: "Reemplazar el valor de NORTHWIND_REPLACE" });
   await replace.getByLabel("Valor").fill("northwind-new-value");
   await replace.getByRole("button", { name: "Guardar" }).click();
   await expect(replace).toBeHidden();
@@ -228,13 +228,7 @@ test("APX's own skills are listed with an APX tag, always on and read-only", asy
   const detail = page.getByRole("article");
   await expect(detail.getByRole("heading", { name: "apx-mcps" })).toBeVisible();
   await expect(detail.getByText("APX", { exact: true })).toBeVisible();
-  // On in every project and not the owner's to turn off: each project's switch is on and locked.
-  const switches = detail.getByRole("switch");
-  await expect(switches.first()).toBeVisible();
-  for (const one of await switches.all()) {
-    await expect(one).toBeChecked();
-    await expect(one).toBeDisabled();
-  }
+  await expect(detail.getByRole("switch")).toHaveCount(0);
   await expect(detail.getByText(/^Viene con APX y les enseña a los agentes a cambiar APX/)).toBeVisible();
   await expect(detail.getByText(/apx mcps add/).first()).toBeVisible();
 });

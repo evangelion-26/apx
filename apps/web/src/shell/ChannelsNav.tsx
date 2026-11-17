@@ -1,19 +1,17 @@
-import { IconButton, Icons, NavItem } from "@apx/ui";
+import { IconButton, Icons, Menu } from "@apx/ui";
 import { useMemo, useState } from "react";
-import { useAccountCounts } from "../channels/counts.ts";
-import { markAllRead } from "../data/actions.ts";
+import { addChannelItems } from "../channels/KindIcon.tsx";
+import { CHANNEL_KIND_IDS } from "../channels/kinds.ts";
 import { useChannels } from "../data/channels.ts";
 import { setPrefs, usePrefs, useSidebarRows } from "../data/prefs.ts";
 import { useData } from "../data/state.ts";
 import { useT } from "../i18n/index.ts";
-import { unreadWhere } from "../inbox/groupThreads.ts";
-import { soleFilter, useInboxFilter } from "../inbox/inboxFilter.ts";
 import { ChannelNavRow } from "./ChannelNavRow.tsx";
 import { go, useNav } from "./nav.ts";
 import { SidebarOverflow, SidebarRowsGrip, SidebarSection } from "./SidebarSection.tsx";
 
 /** The most recently active channels, as many as the owner dragged the section to; manual order lasts until newer activity arrives. */
-export function ChannelsNav({ rail, compact = false }: { rail: boolean; compact?: boolean }) {
+export function ChannelsNav({ rail }: { rail: boolean }) {
   const t = useT();
   const channels = useChannels((s) => s.channels);
   const saved = usePrefs((s) => s.channelOrder);
@@ -42,22 +40,19 @@ export function ChannelsNav({ rail, compact = false }: { rail: boolean; compact?
       return channel ? [channel] : [];
     });
   }, [channels, saved, threads, orderAt]);
-  const accountCounts = useAccountCounts();
-  const counts = useMemo(() => new Map([...accountCounts].map(([id, c]) => [id, c.unread])), [accountCounts]);
+  const counts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const thread of Object.values(threads)) {
+      if (thread.channel) counts.set(thread.channel.id, (counts.get(thread.channel.id) ?? 0) + thread.unread);
+    }
+    return counts;
+  }, [threads]);
   // Folding a single leftover would save nothing.
   const cut = ordered.length > rows + 1 ? rows : ordered.length;
   const shown = ordered.slice(0, cut);
   const rest = ordered.slice(cut);
-  // An account opens the Inbox narrowed to it: one picked from under "more" marks that row.
-  const filtered = useInboxFilter((f) => {
-    const sole = soleFilter(f);
-    return sole?.kind === "accounts" ? sole.id : undefined;
-  });
-  const hiddenActive = rest.some(
-    (channel) => (view === "channel" && channel.id === channelId) || (view === "inbox" && channel.id === filtered),
-  );
+  const hiddenActive = view === "channel" && rest.some((channel) => channel.id === channelId);
   const hiddenUnread = rest.reduce((sum, channel) => sum + (counts.get(channel.id) ?? 0), 0);
-  const unreadIds = useMemo(() => unreadWhere(threads, (thread) => !!thread.channel), [threads]);
   const totalUnread = ordered.reduce((sum, channel) => sum + (counts.get(channel.id) ?? 0), 0);
 
   const move = (id: string, index: number) => {
@@ -81,60 +76,40 @@ export function ChannelsNav({ rail, compact = false }: { rail: boolean; compact?
       rail={rail && !overflow}
       order={order}
       count={counts.get(channel.id) ?? 0}
-      waiting={accountCounts.get(channel.id)?.waiting ?? 0}
       onClose={() => setMoreOpen(false)}
       onMove={move}
     />
   );
-  const add = (
-    <IconButton
-      size="sm"
-      className="sidebar__add"
-      label={t("chs.new")}
-      icon={<Icons.Plus size={14} />}
-      onClick={() => go.newChannel()}
-    />
+  const missing = addChannelItems(
+    channels.map((channel) => channel.type),
+    t,
+    go.channelConfig,
   );
+  const add = CHANNEL_KIND_IDS.some((kind) => !channels.some((channel) => channel.type === kind)) ? (
+    <Menu
+      align="start"
+      trigger={
+        <IconButton size="sm" className="sidebar__add" label={t("channels.add")} icon={<Icons.Plus size={14} />} />
+      }
+      items={missing}
+    />
+  ) : null;
   const moreLabel = t("nav.moreChannels", { n: rest.length });
   return (
     <SidebarSection
       rail={rail}
       title={t("nav.channels")}
       action={add}
-      compact={compact}
-      icon={<Icons.MessageCircle size={16} />}
-      count={ordered.length}
-      active={view === "channel" || view === "channels" || (view === "inbox" && filtered !== undefined)}
       folded={folded}
       unread={totalUnread}
       unreadLabel={t("nav.channelsUnread", { unread: totalUnread })}
-      menu={[
-        {
-          label: t("inbox.markAllRead"),
-          icon: <Icons.CheckCheck />,
-          disabled: unreadIds.length === 0,
-          onSelect: () => markAllRead(unreadIds),
-        },
-      ]}
       onToggle={() => {
         setMoreOpen(false);
         setPrefs({ channelsFolded: !folded });
       }}
     >
-      {(compact || !hidden) && (
-        <NavItem
-          // In the flyout (compact) the row is a list item with its words, like the channels under it.
-          collapsed={rail && !compact}
-          className="channelsnav__manage"
-          icon={<Icons.LayoutGrid />}
-          label={t("nav.manageChannels")}
-          active={view === "channels"}
-          onClick={() => go.view("channels")}
-        />
-      )}
-      {compact && <div className="channelsnav__shown">{ordered.map((channel) => row(channel, true))}</div>}
-      {!compact && !hidden && <div className="channelsnav__shown">{shown.map((channel) => row(channel))}</div>}
-      {!compact && !hidden && rest.length > 0 && (
+      {!hidden && <div className="channelsnav__shown">{shown.map((channel) => row(channel))}</div>}
+      {!hidden && rest.length > 0 && (
         <SidebarOverflow
           rail={rail}
           title={t("nav.channels")}
@@ -149,9 +124,7 @@ export function ChannelsNav({ rail, compact = false }: { rail: boolean; compact?
           {rest.map((channel) => row(channel, true))}
         </SidebarOverflow>
       )}
-      {!compact && !hidden && !rail && (
-        <SidebarRowsGrip section="channels" total={ordered.length} title={t("nav.channels")} />
-      )}
+      {!hidden && !rail && <SidebarRowsGrip section="channels" total={ordered.length} title={t("nav.channels")} />}
     </SidebarSection>
   );
 }

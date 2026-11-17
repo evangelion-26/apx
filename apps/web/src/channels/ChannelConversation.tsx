@@ -2,14 +2,13 @@ import type { ChannelInfo, Message, Person, Thread } from "@apx/protocol";
 import { receivedMail } from "@apx/protocol/email-block";
 import {
   Button,
-  Composer,
   EmptyState,
   IconButton,
   Icons,
   SegmentedControl,
   Skeleton,
   StickyScroll,
-  Tag,
+  Textarea,
   Tooltip,
 } from "@apx/ui";
 import { Suspense, useEffect, useState } from "react";
@@ -20,11 +19,10 @@ import { shortWhen } from "../common/format.ts";
 import { loadThread, markRead, send } from "../data/actions.ts";
 import { openContactChat, type PresenceState, recoverFiles, sendDirect } from "../data/channels.ts";
 import { useData } from "../data/state.ts";
-import { type MessageKey, useT } from "../i18n/index.ts";
-import { EmailCard, MediaGroup, ReceivedMail } from "../lazy.ts";
+import { useT } from "../i18n/index.ts";
+import { EmailCard, MediaGroup } from "../lazy.ts";
 import { go } from "../shell/nav.ts";
 import { addressText, ContactFace } from "./ContactRow.tsx";
-import { ContactFlags, useContactFlags } from "./flags.tsx";
 import { KindIcon } from "./KindIcon.tsx";
 import { CHANNEL_KINDS } from "./kinds.ts";
 import { DeliveryTicks, ReactionList } from "./MessageMarks.tsx";
@@ -49,8 +47,6 @@ export function ChannelConversation(props: {
   card: boolean;
   onToggleCard(): void;
   onBack(): void;
-  /** Where a chat made for a contact who had none opens: by default, picked in its channel's list. */
-  onOpened?(threadId: string): void;
 }) {
   const t = useT();
   const { thread, person, channel } = props;
@@ -82,7 +78,7 @@ export function ChannelConversation(props: {
     // A contact with no chat yet: it is made now, and the list picks it.
     if (!id && person) {
       id = (await openContactChat(person.id, channel.id))?.id;
-      if (id) (props.onOpened ?? ((made: string) => go.channel(channel.id, made)))(id);
+      if (id) go.channel(channel.id, id);
     }
     let ok = Boolean(id);
     if (id && mode === "me") ok = await sendDirect(id, words);
@@ -111,7 +107,6 @@ export function ChannelConversation(props: {
     person?.relation ? t(RELATION_KEY[person.relation]) : undefined,
   ].filter(Boolean);
   const address = addressText(channel.type, person, channel.id);
-  const flags = useContactFlags(person, channel.id);
   // Only WhatsApp can send old messages again (the owner's phone keeps them).
   const lostFiles =
     channel.type === "whatsapp" &&
@@ -144,17 +139,15 @@ export function ChannelConversation(props: {
           aria-expanded={props.card}
           onClick={props.onToggleCard}
         >
+          <Tooltip content={channelLabel}>
+            <span className="threadavatar__channel" role="img" aria-label={channelLabel}>
+              <KindIcon kind={channel.type} size={16} />
+            </span>
+          </Tooltip>
           <ContactFace person={person} name={name} presence={props.presence} />
           <span className="chan__titles">
             <span className="chan__name">{name}</span>
-            {/* The app is said once, in words under the name, as in an agent's chat. */}
-            <span className="chan__metaline">
-              <Tag>
-                <KindIcon kind={channel.type} size={11} /> {channelLabel}
-              </Tag>
-              {meta.length > 0 && <span className="chan__meta">{meta.join(" · ")}</span>}
-              <ContactFlags flags={flags} />
-            </span>
+            <span className="chan__meta">{meta.join(" · ")}</span>
           </span>
         </button>
         {lostFiles && (
@@ -169,6 +162,14 @@ export function ChannelConversation(props: {
             {t("ch.recover")}
           </Button>
         )}
+        <Button
+          size="sm"
+          variant={props.card ? "secondary" : "ghost"}
+          leadingIcon={<Icons.User size={14} />}
+          onClick={props.onToggleCard}
+        >
+          {t("ch.contact")}
+        </Button>
       </header>
       <StickyScroll
         resetKey={threadId || (person?.id ?? "")}
@@ -188,47 +189,46 @@ export function ChannelConversation(props: {
           (messages ?? []).map((m) => <Bubble key={m.id} m={m} agentName={agentName} mail={channel.type === "email"} />)
         )}
       </StickyScroll>
-      {/* The same composer as a room's: the line, and under it who writes, what each choice does on hover. */}
-      <div className="chat__composer chan__composer">
-        <Composer
-          className="composer--slim"
+      <div className="chan__composer">
+        <Textarea
+          aria-label={writeLabel}
           placeholder={writeLabel}
-          inputLabel={writeLabel}
-          labels={{ send: t("composer.send"), stop: t("composer.stop") }}
-          sendHint={t("composer.sendHint")}
+          rows={2}
           value={text}
-          onValueChange={setText}
-          disabled={busy}
-          onSubmit={() => void submit()}
+          onChange={(e) => setText(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              void submit();
+            }
+          }}
         />
-        <div className="chat__composer-foot">
-          <Tooltip content={hint}>
-            <span className="chat__roommode">
-              <SegmentedControl
-                size="sm"
-                label={t("ch.who")}
-                value={mode}
-                onValueChange={setMode}
-                options={[
-                  { value: "agent", label: t("ch.agentAnswers", { agent: agentName }) },
-                  { value: "me", label: t("ch.iWrite") },
-                ]}
-              />
-            </span>
-          </Tooltip>
+        <div className="chan__composerbar">
+          <SegmentedControl
+            size="sm"
+            label={t("ch.who")}
+            value={mode}
+            onValueChange={setMode}
+            options={[
+              { value: "agent", label: t("ch.agentAnswers", { agent: agentName }) },
+              { value: "me", label: t("ch.iWrite") },
+            ]}
+          />
+          <span className="chan__spacer" />
+          <IconButton
+            variant="primary"
+            shape="circle"
+            label={t("tasks.send")}
+            icon={<Icons.ArrowUp size={14} />}
+            disabled={!text.trim() || busy}
+            onClick={() => void submit()}
+          />
         </div>
+        <p className="chan__hint">{hint}</p>
       </div>
     </section>
   );
 }
-
-const MARK_LABEL: Record<string, MessageKey> = {
-  "mail.automatic": "ch.mark.automatic",
-  "mail.spam": "ch.mark.spam",
-  "mail.unverified": "ch.mark.unverified",
-  "mail.blocked": "ch.mark.blocked",
-  "mail.outside": "ch.mark.outside",
-};
 
 function Bubble({ m, agentName, mail }: { m: Message; agentName: string; mail: boolean }) {
   const t = useT();
@@ -238,13 +238,7 @@ function Bubble({ m, agentName, mail }: { m: Message; agentName: string; mail: b
     .trim();
   const words = m.author.kind === "agent" && isSignal(said) ? "" : withoutFilesNote(m.parts, said);
   const media = mediaBlocks(m.parts).filter((b) => b.kind !== "part");
-  // A received mail's formatted copy is the mail itself, not a file of it.
-  const formatted = mail
-    ? m.parts.find((p) => p.type === "file" && p.mime === "text/html" && p.name === "mail.html")
-    : undefined;
-  const files = bubbleFiles(m.parts).filter((p) => p !== formatted);
-  // A kept mail nobody answers (spam, automatic…) says why at its foot.
-  const marks = m.parts.flatMap((p) => (p.type === "notice" && p.code.startsWith("mail.") ? [p.code] : []));
+  const files = bubbleFiles(m.parts);
   const actions = m.parts.flatMap((p) => (p.type === "tool" && p.status !== "error" ? [p.title] : []));
   const out = m.author.kind === "agent" || m.author.kind === "user";
   // The owner's words to the agent (what to answer) read apart from what was sent to the contact.
@@ -276,16 +270,7 @@ function Bubble({ m, agentName, mail }: { m: Message; agentName: string; mail: b
           {files.map((p) =>
             p.type === "file" ? <FilePart key={p.media_id} part={p} /> : <AudioPart key={p.media_id} part={p} />,
           )}
-          {words && formatted?.type === "file" && m.author.kind === "person" ? (
-            <Suspense fallback={<p className="chan__text">{words}</p>}>
-              <ReceivedMail
-                from={m.author.name}
-                subject={receivedMail(words).subject}
-                at={m.created_at}
-                htmlId={formatted.media_id}
-              />
-            </Suspense>
-          ) : words && mail && m.author.kind === "person" ? (
+          {words && mail && m.author.kind === "person" ? (
             <Suspense fallback={<p className="chan__text">{words}</p>}>
               <EmailCard
                 mail={{ to: [], cc: [], from: m.author.name, date: "", ...receivedMail(words) }}
@@ -295,11 +280,6 @@ function Bubble({ m, agentName, mail }: { m: Message; agentName: string; mail: b
           ) : (
             words && <p className="chan__text">{words}</p>
           )}
-          {marks.map((code) => (
-            <span key={code} className="chan__mark" title={t("ch.markHint")}>
-              <Icons.Tag size={12} /> {t(MARK_LABEL[code] ?? "ch.mark.automatic")}
-            </span>
-          ))}
           {m.reactions?.length ? (
             <span className="chan__reactions">
               <ReactionList list={m.reactions} agentName={agentName} />

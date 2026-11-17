@@ -74,8 +74,6 @@ export const Task = z.object({
   /** Last time anything happened: an edit, a comment, a turn. */
   /** How many chats its agents worked it in (each agent that took it has one). */
   chats: z.number().int().nonnegative().default(0),
-  /** The agents that took part: its agent, those with a chat for it and the teammates asked on it. */
-  agents: z.array(z.string()).optional(),
   activity_at: z.string(),
 });
 export type Task = z.infer<typeof Task>;
@@ -113,11 +111,6 @@ export const RoutineRun = z.object({
   delivered: z.boolean().optional(),
   /** false: the pre-command's result said not to call the model, so the run spent no tokens. */
   model_called: z.boolean().optional(),
-  /**
-   * Which version of the routine's instructions it ran (routines.runs): 1 for the oldest listed, one more each time
-   * the instructions differ from the run before.
-   */
-  prompt_version: z.number().int().min(1).optional(),
 });
 export type RoutineRun = z.infer<typeof RoutineRun>;
 
@@ -134,13 +127,6 @@ export type CallModel = z.infer<typeof CallModel>;
  * the owner, in one message, what the other agents' routines and notices had for them (called only when there is). */
 export const RoutineAction = z.enum(["agent", "message", "shell", "watch", "relay"]);
 export type RoutineAction = z.infer<typeof RoutineAction>;
-
-/**
- * How a routine's runs act, over its agent's own mode: ask before every change, Auto, or Total (nothing waits for the
- * owner). Absent: the agent's own mode. It never reaches the agent's other chats (DECISIONS.md#d-223).
- */
-export const RoutineAutonomy = z.enum(["manual", "auto", "total"]);
-export type RoutineAutonomy = z.infer<typeof RoutineAutonomy>;
 
 /** Work an agent does on its own on a schedule; the owner hears back only when there is something to say. */
 export const Routine = z.object({
@@ -160,8 +146,6 @@ export const Routine = z.object({
   anchor: z.boolean().default(false),
   /** Model calls each run may make before it must answer; absent: what any run no one watches gets. */
   max_steps: z.number().int().optional(),
-  /** How its runs act, over the agent's own mode; absent: the agent's own. */
-  autonomy: RoutineAutonomy.optional(),
   /** Seeded by a profile ("secretary:day-open"): the profile keeps its schedule, and can restore its prompt. */
   origin: z.string().optional(),
   enabled: z.boolean(),
@@ -261,7 +245,7 @@ export const ActiveProfile = z.object({
 export type ActiveProfile = z.infer<typeof ActiveProfile>;
 
 /** What a notice in the attention tray is about. */
-export const NotificationKind = z.enum(["input", "task", "due", "routine", "channel", "agent", "run", "memory"]);
+export const NotificationKind = z.enum(["input", "task", "due", "routine", "channel", "agent", "run"]);
 export type NotificationKind = z.infer<typeof NotificationKind>;
 
 /**

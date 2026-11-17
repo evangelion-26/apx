@@ -54,14 +54,13 @@ function DesktopSlot({ desktop, tab }: { desktop: NonNullable<Window["apxDesktop
     if (!el) return;
     if (covered) {
       let live = true;
-      // Behind the panel it keeps its place and size, so the page never lays out again and the still matches it.
-      const behind = { ...rectOf(el), behind: true };
       // A drag must reach the panel at once; a popup waits for the still, so the page never blinks.
-      if (dragging) desktop.setBrowserBounds(behind);
+      if (dragging) desktop.setBrowserBounds(null);
+      const width = el.getBoundingClientRect().width;
       stillOf(desktop).then((src) => {
         if (!live) return;
-        if (src) setFrame({ src, width: behind.width });
-        requestAnimationFrame(() => requestAnimationFrame(() => live && desktop.setBrowserBounds(behind)));
+        if (src) setFrame({ src, width });
+        requestAnimationFrame(() => requestAnimationFrame(() => live && desktop.setBrowserBounds(null)));
       });
       return () => {
         live = false;
@@ -72,15 +71,15 @@ function DesktopSlot({ desktop, tab }: { desktop: NonNullable<Window["apxDesktop
     const report = () => {
       cancelAnimationFrame(tick);
       tick = requestAnimationFrame(() => {
-        const r = rectOf(el);
+        const r = el.getBoundingClientRect();
         const visible = r.width > 0 && r.height > 0 && document.visibilityState === "visible";
-        const next = visible ? r : null;
+        const next = visible
+          ? { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) }
+          : null;
         const key = JSON.stringify(next);
         if (key === last) return;
         last = key;
         desktop.setBrowserBounds(next);
-        // The live page is back over the slot: an old still must not show wherever the page leaves room.
-        if (next) requestAnimationFrame(() => requestAnimationFrame(() => setFrame(null)));
       });
     };
     // The slot also moves without changing size (a column beside it grows): watch what sits around it too.
@@ -105,12 +104,6 @@ function DesktopSlot({ desktop, tab }: { desktop: NonNullable<Window["apxDesktop
       )}
     </div>
   );
-}
-
-/** The slot on screen, in whole viewport pixels. */
-function rectOf(el: HTMLElement) {
-  const r = el.getBoundingClientRect();
-  return { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) };
 }
 
 /** A decoded still of the page on screen, or null when the app cannot take one. */

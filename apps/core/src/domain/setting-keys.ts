@@ -2,7 +2,6 @@
 // only through `store.settings.read`, so a bad stored value falls back here instead of reaching the code using it.
 import {
   ActiveProfile,
-  ActivityReviewSettings,
   AgentBudgets,
   AgentLimits,
   BaseProject,
@@ -15,7 +14,6 @@ import {
   ImageDefaults,
   MemorySettings,
   ModelChoice,
-  MutedEvent,
   NoticePrefs,
   Organization,
   ProviderInfo,
@@ -71,7 +69,6 @@ const AcpAgent = z.object({
 const Channel = ChannelInfo.omit({ token_set: true, token_hint: true, status: true, error: true, account: true });
 
 export const SETTINGS = {
-  activity_review: entry(ActivityReviewSettings, { enabled: true, frequency: "daily", extra_details: "" }),
   email_signatures: entry(EmailSignatures, []),
   email_signature_default: entry(EmailSignatureValue.nullable(), null),
   engine_usage: entry(z.record(z.string(), z.boolean()), {}),
@@ -110,15 +107,10 @@ export const SETTINGS = {
   /** Saved without the auxiliary model, which keeps its own key ("model_aux", plain text). */
   memory: entry(MemorySettings.omit({ aux_model: true }).partial(), {}),
   /** About the owner and their time zone (their name is the owner's person; the language is "owner_language"). */
-  owner_profile: entry(
-    z.object({
-      about: z.string().catch(""),
-      timezone: z.string().catch(""),
-      // Unset: publishing runs without asking ("auto").
-      publish: z.enum(["auto", "ask"]).optional().catch(undefined),
-    }),
-    { about: "", timezone: "" },
-  ),
+  owner_profile: entry(z.object({ about: z.string().catch(""), timezone: z.string().catch("") }), {
+    about: "",
+    timezone: "",
+  }),
   /** The base project's name, description and kind (it has no folder to keep them in). */
   base_project: entry(BaseProject, { name: "Default" }),
   /** The base project's areas and roles (a real project keeps them in its .apc/organization.json). */
@@ -135,8 +127,6 @@ export const SETTINGS = {
     }),
     { enabled: false, lead_min: CALENDAR_LEAD.default, every_min: CHECK_EVERY.default },
   ),
-  /** Google Calendar's events (a whole series, for a recurring one) the owner is not reminded of; the latest last. */
-  calendar_muted: entry(z.array(MutedEvent).catch([]), []),
   /** Gmail's mail check: off, every 5 minutes, any mail outside ads and social until the owner chooses. */
   mail_check: entry(
     z.object({
@@ -182,19 +172,6 @@ export const SETTINGS = {
   imessage: entry(z.object({ on: z.boolean().catch(false) }), { on: false }),
   skills_off: entry(OffLists, {}),
   mcp_off: entry(OffLists, {}),
-  /**
-   * Each MCP server's tools as last listed, by connection key: the list tells their names and permissions before the
-   * server starts again. Only for the definition (`hash`) they came from.
-   */
-  mcp_tools_seen: entry(
-    z
-      .record(
-        z.string(),
-        z.object({ hash: z.string(), tools: z.array(z.object({ name: z.string(), key: z.string() })) }),
-      )
-      .catch({}),
-    {},
-  ),
   model_default: entry(ModelChoice.nullable(), null),
   model_router: entry(RouterConfig, { rules: [], chain: [] }),
   image_defaults: entry(ImageDefaults.partial(), {}),

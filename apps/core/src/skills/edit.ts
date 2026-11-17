@@ -11,13 +11,10 @@ import { NO_GLOBALS, type Skill, skillOn, skillPath, skillsOff } from "./skills.
 /** What the panel shows about a skill, in the context it was asked from. */
 export function skillInfo(store: Store, s: Skill, projectId: string | undefined): SkillInfo {
   const off = skillsOff(store);
-  // A project's own skill reaches its subprojects too: where it is off is that project or one of them.
-  const reaches = (k: string) =>
-    s.scope === "global" || k === s.project_id || store.projects.get(k)?.parent === s.project_id;
-  const offIn = Object.keys(off).filter(
-    (k) =>
-      k !== "*" && reaches(k) && (off[k]?.includes(s.name) || (s.scope === "global" && off[k]?.includes(NO_GLOBALS))),
-  );
+  const offIn =
+    s.scope === "global"
+      ? Object.keys(off).filter((k) => k !== "*" && (off[k]?.includes(s.name) || off[k]?.includes(NO_GLOBALS)))
+      : [];
   return {
     name: s.name,
     description: s.description,

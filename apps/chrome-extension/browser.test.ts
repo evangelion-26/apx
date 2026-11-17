@@ -112,19 +112,18 @@ for (const language of ["en", "es"] as const) {
         const model = frame.locator(".composer__model");
         await model.click();
         await expect(frame.locator(".mchoice")).toBeVisible();
-        await expect(frame.locator(".mslim__slot")).toHaveCount(1);
-        // The list's loading placeholder is a status too: read the choice once the models are in.
-        await expect(frame.locator(".mchoice .mskel")).toHaveCount(0);
-        await expect(frame.locator('.mchoice [role="status"]')).toContainText("sample-one");
+        await expect(frame.locator(".mchoice__fallback")).toHaveCount(2);
+        await expect(frame.locator(".mchoice")).not.toContainText("Router");
         await expect(
-          frame.getByRole("button", { name: language === "es" ? "Dejar solo el router" : "Leave only the router" }),
+          frame.getByRole("button", { name: language === "es" ? "Elegir automáticamente" : "Choose automatically" }),
         ).toBeVisible();
         await expect(frame.getByRole("searchbox")).toBeVisible();
         const option = frame.getByRole("option", { name: new RegExp(LONG_MODEL) });
         const label = option.locator(".mlist__name");
-        await expect(option).toHaveAttribute("title", `custom/${LONG_MODEL}`);
-        await expect(label).toHaveText(LONG_MODEL);
-        for (const locator of [label]) {
+        const ref = option.locator(".mlist__ref");
+        await expect(ref).toBeVisible();
+        await expect(ref).toHaveText(`custom/${LONG_MODEL}`);
+        for (const locator of [label, ref]) {
           const fits = await locator.evaluate(
             (element) =>
               element.scrollWidth <= element.clientWidth + 1 && element.scrollHeight <= element.clientHeight + 1,
@@ -133,15 +132,8 @@ for (const language of ["en", "es"] as const) {
         }
         await option.click();
         await expect(model).toContainText(LONG_MODEL);
-        const current = frame.locator('.mchoice [role="status"]');
+        const current = frame.locator(".mchoice__current");
         await expect(current).toContainText(LONG_MODEL);
-        await expect(frame.locator(".mslim__slot")).toHaveCount(2);
-        await expect(frame.locator(".mslim__slot").nth(1).locator(".mslim__name")).toHaveText(
-          language === "es" ? "Automático" : "Automatic",
-        );
-        await expect(frame.locator(".mslim__slot").nth(1).locator(".mslim__note")).toHaveText(
-          language === "es" ? "Si falla" : "If it fails",
-        );
         assert.equal(await current.evaluate((element) => element.scrollWidth <= element.clientWidth + 1), true);
         await capture(page, frame, language, "model-menu");
         await page.keyboard.press("Escape");
@@ -150,7 +142,7 @@ for (const language of ["en", "es"] as const) {
         const arrow = await model.locator(".selectbtn__chevron").boundingBox();
         assert.ok(arrow && arrow.width >= 11, `model arrow is ${arrow?.width}px wide`);
         const stored = await client.call("threads.get", { thread: "home" });
-        assert.deepEqual(stored.thread.model_choice, { model: `custom/${LONG_MODEL}`, router: true });
+        assert.equal(stored.thread.model_choice?.model, `custom/${LONG_MODEL}`);
         await frame.locator("textarea").fill("Check the isolated extension chat.");
         await frame.locator("textarea").press("Enter");
         const reply = frame.getByText("The isolated chat reached APX.", { exact: true });
@@ -238,7 +230,7 @@ for (const language of ["en", "es"] as const) {
           : "No models available yet. Connect a service in APX.",
       );
       await expect(frame.getByRole("option")).toHaveCount(0);
-      await expect(frame.locator(".mslim__foot")).toHaveCount(0);
+      await expect(frame.locator(".mchoice__fallback")).toHaveCount(0);
       await expect(frame.getByRole("searchbox")).toHaveCount(0);
       await capture(page, frame, language, "no-models");
     });

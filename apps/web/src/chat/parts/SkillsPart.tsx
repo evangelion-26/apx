@@ -1,4 +1,3 @@
-import "../../styles/chat-cards.css";
 import type { Part, SkillInfo } from "@apx/protocol";
 import { Icons, Popover, Tag, Tooltip } from "@apx/ui";
 import { useEffect, useState } from "react";

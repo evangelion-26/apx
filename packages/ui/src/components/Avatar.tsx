@@ -22,15 +22,8 @@ export interface AvatarProps {
   style?: CSSProperties;
 }
 
-/** Letters and digits of the words, past a handle in brackets: "Ana (@ana)" → "AN", "@lu.fer" → "LU". */
 function initials(name: string) {
-  const words = name
-    .replace(/\([^)]*\)/g, " ")
-    .split(/\s+/)
-    .map((w) => w.replace(/[^\p{L}\p{N}]/gu, ""))
-    .filter(Boolean);
-  // Only a handle: its own letters.
-  const parts = words.length ? words : [name.replace(/[^\p{L}\p{N}]/gu, "")];
+  const parts = name.trim().split(/\s+/).filter(Boolean);
   return (
     (parts[0]?.[0] ?? "") + (parts.length > 1 ? parts[parts.length - 1][0] : (parts[0]?.[1] ?? ""))
   ).toUpperCase();

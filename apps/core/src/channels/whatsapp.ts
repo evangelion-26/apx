@@ -1,12 +1,11 @@
 // WhatsApp on the owner's own account, as a linked device (Baileys). The owner talks to their agent in "Message
 // yourself"; anyone else is a contact the owner approved, and nobody else ever gets an answer from the owner's number.
-// Groups are read only when the owner listed them (rooms). The library loads with the first WhatsApp channel; the
-// credentials folder IS the account (kept at 0700). See DECISIONS.md#d-025, DECISIONS.md#d-216
+// The library loads with the first WhatsApp channel; the credentials folder IS the account (kept at 0700).
+// See DECISIONS.md#d-025
 import fs from "node:fs";
 import path from "node:path";
 import { UPLOAD_LIMITS } from "@apx/protocol";
 import type { Inbound, Presentation } from "../domain/channels.ts";
-import type { RunTimers } from "../engine/engine.ts";
 import { errorMessage } from "../errors.ts";
 import type { Log } from "../log.ts";
 import { countryOf, whatsappDigits } from "./phone.ts";
@@ -19,11 +18,8 @@ import {
   type OutFile,
   type Recovered,
   SendError,
-  type ServerRoom,
 } from "./types.ts";
-import { contextOf, mediaOf, textOf, unwrap, type WaContent, type WaKey, type WaMedia } from "./whatsapp-content.ts";
-import { lookup, wallTimers } from "./whatsapp-lookup.ts";
-import { type Menu, optionNamed, readMenu, tapFor } from "./whatsapp-menus.ts";
+import { type Menu, menuText, optionNamed, readMenu, tapFor, WA_CONTAINERS } from "./whatsapp-menus.ts";
 
 /** The part of the library APX uses, so a test can hand in its own. */
 export type WaLib = {
@@ -41,15 +37,8 @@ export type WaLib = {
 };
 export type WaSocket = {
   ev: { on(event: string, listener: (arg: never) => void): void };
-  /** The linked account; `name` is its profile name once the phone shared it, `verifiedName` a business's. */
-  user?: { id: string; lid?: string; name?: string; verifiedName?: string } | undefined;
-  sendMessage(
-    jid: string,
-    content: Record<string, unknown>,
-    opts?: { quoted?: WaMessage },
-  ): Promise<{ key?: { id?: string | null } } | undefined>;
-  /** The groups the account is in, by their address. */
-  groupFetchAllParticipating?(): Promise<Record<string, WaGroup>>;
+  user?: { id: string; lid?: string } | undefined;
+  sendMessage(jid: string, content: Record<string, unknown>): Promise<{ key?: { id?: string | null } } | undefined>;
   sendPresenceUpdate(type: "composing" | "paused", jid?: string): Promise<void>;
   logout(): Promise<void>;
   end(err?: Error): void;
@@ -71,14 +60,42 @@ export type WaSocket = {
     };
   };
 };
-export type WaGroup = {
-  id: string;
-  subject?: string | null;
-  /** Only admins may write. */
-  announce?: boolean | null;
-  /** A community's parent: nobody writes in it. */
-  isCommunity?: boolean | null;
-  participants?: Array<{ id: string; admin?: string | null }> | null;
+export type WaKey = {
+  id?: string | null;
+  remoteJid?: string | null;
+  remoteJidAlt?: string | null;
+  fromMe?: boolean | null;
+};
+/** A file's size as the library hands it: a number, or a protobuf Long. */
+type WaLength = number | { toNumber(): number } | null | undefined;
+type WaFile = { mimetype?: string | null; fileLength?: WaLength };
+type WaCard = { displayName?: string | null; vcard?: string | null };
+type WaPlace = {
+  degreesLatitude?: number | null;
+  degreesLongitude?: number | null;
+  name?: string | null;
+  address?: string | null;
+};
+export type WaContent = {
+  conversation?: string | null;
+  extendedTextMessage?: { text?: string | null } | null;
+  imageMessage?: (WaFile & { caption?: string | null }) | null;
+  videoMessage?: (WaFile & { caption?: string | null }) | null;
+  /** A round video note. */
+  ptvMessage?: WaFile | null;
+  documentMessage?: (WaFile & { caption?: string | null; fileName?: string | null }) | null;
+  audioMessage?: { ptt?: boolean | null; mimetype?: string | null } | null;
+  stickerMessage?: WaFile | null;
+  /** A contact card someone shared (one, or several at once). */
+  contactMessage?: WaCard | null;
+  contactsArrayMessage?: { contacts?: (WaCard | null)[] | null } | null;
+  locationMessage?: WaPlace | null;
+  liveLocationMessage?: WaPlace | null;
+  /** An emoji on a message (`key.id`); empty text when it was taken off. */
+  reactionMessage?: { key?: WaKey | null; text?: string | null } | null;
+  ephemeralMessage?: { message?: WaContent | null } | null;
+  viewOnceMessage?: { message?: WaContent | null } | null;
+  viewOnceMessageV2?: { message?: WaContent | null } | null;
 };
 export type WaMessage = {
   key: WaKey;
@@ -124,12 +141,6 @@ export const normalJid = (jid: string | null | undefined): string => {
   return `${s.slice(0, at).split(":")[0]}@${s.slice(at + 1)}`;
 };
 const isPhone = (jid: string) => jid.endsWith("@s.whatsapp.net");
-/** The number a private id stands for, when this device has learned it (from a send or an earlier message). */
-async function numberOf(s: WaSocket, jid: string, timers: RunTimers): Promise<string> {
-  if (!jid.endsWith("@lid")) return jid;
-  const pn = normalJid(await lookup(timers, s.signalRepository?.lidMapping?.getPNForLID?.(jid)));
-  return isPhone(pn) ? pn : jid;
-}
 const digitsOf = (jid: string) => jid.split("@")[0] ?? "";
 const ignorable = (jid: string) =>
   !jid ||
@@ -137,6 +148,80 @@ const ignorable = (jid: string) =>
   jid.endsWith("@newsletter") ||
   digitsOf(jid) === "0" ||
   SERVICE.has(digitsOf(jid));
+
+/** The words of a message, its wrappers (disappearing, view once) opened. */
+function unwrap(c: WaContent | null | undefined): WaContent | undefined {
+  let cur = c ?? undefined;
+  for (let i = 0; i < 6 && cur; i++) {
+    const wrappers = cur as Record<string, { message?: WaContent | null } | null | undefined>;
+    const inner = WA_CONTAINERS.map((k) => wrappers[k]?.message).find(Boolean);
+    if (!inner) break;
+    cur = inner;
+  }
+  return cur;
+}
+function textOf(c: WaContent): string | undefined {
+  return (
+    c.conversation ??
+    c.extendedTextMessage?.text ??
+    c.imageMessage?.caption ??
+    c.videoMessage?.caption ??
+    c.documentMessage?.caption ??
+    menuText(c) ??
+    sharedText(c)
+  );
+}
+
+/** A shared contact card or place, as words: the agent needs the name and number, not the vCard. */
+function sharedText(c: WaContent): string | undefined {
+  const cards = c.contactMessage ? [c.contactMessage] : (c.contactsArrayMessage?.contacts ?? []);
+  const shown = cards
+    .filter((k): k is WaCard => Boolean(k))
+    .map(cardText)
+    .filter(Boolean);
+  if (shown.length) return shown.join("\n");
+  const place = c.locationMessage ?? c.liveLocationMessage;
+  if (!place) return undefined;
+  const at =
+    typeof place.degreesLatitude === "number" && typeof place.degreesLongitude === "number"
+      ? `${place.degreesLatitude}, ${place.degreesLongitude}`
+      : "";
+  const said = [place.name, place.address, at].map((v) => String(v ?? "").trim()).filter(Boolean);
+  return said.length ? `[location: ${said.join(" · ").slice(0, 300)}]` : undefined;
+}
+function cardText(k: WaCard): string {
+  const lines = String(k.vcard ?? "").split(/\r?\n/);
+  const field = (name: string) =>
+    lines.filter((l) => l.toUpperCase().startsWith(name)).map((l) => l.slice(l.indexOf(":") + 1).trim());
+  const name = k.displayName?.trim() || field("FN")[0] || "";
+  // `TEL;waid=549…:+54 9 …`: the number as written, after the parameters.
+  const phones = [...new Set(field("TEL").filter(Boolean))];
+  const emails = field("EMAIL").filter(Boolean);
+  const said = [name, ...phones, ...emails].filter(Boolean);
+  return said.length ? `[contact: ${said.join(", ").slice(0, 300)}]` : "";
+}
+
+/** A message's picture, video, sticker or document: what it is, the name it is kept under and its declared size. */
+type WaMedia = { kind: "photo" | "video" | "sticker" | "file"; name: string; mime: string; size: number };
+const sizeOf = (n: WaLength) => (typeof n === "number" ? n : n ? n.toNumber() : 0);
+const extOf = (mime: string, fallback: string) =>
+  ({ "video/quicktime": "mov", "video/3gpp": "3gp", "image/jpeg": "jpg" })[mime] ??
+  (/^[a-z]+\/([a-z0-9]{2,5})$/.exec(mime)?.[1] || fallback);
+function mediaOf(c: WaContent): WaMedia | undefined {
+  const typed = (f: WaFile, fallback: string) => (f.mimetype ?? fallback).split(";")[0]?.trim() || fallback;
+  const made = (kind: WaMedia["kind"], f: WaFile, fallback: string, base: string): WaMedia => {
+    const mime = typed(f, fallback);
+    return { kind, mime, name: `${base}.${extOf(mime, fallback.split("/")[1] ?? "bin")}`, size: sizeOf(f.fileLength) };
+  };
+  if (c.imageMessage) return made("photo", c.imageMessage, "image/jpeg", "photo");
+  if (c.videoMessage) return made("video", c.videoMessage, "video/mp4", "video");
+  if (c.ptvMessage) return made("video", c.ptvMessage, "video/mp4", "video");
+  if (c.stickerMessage) return made("sticker", c.stickerMessage, "image/webp", "sticker");
+  const d = c.documentMessage;
+  if (!d) return undefined;
+  const name = path.basename(String(d.fileName ?? "").replaceAll("\\", "/")).slice(0, 200) || "document";
+  return { kind: "file", name, mime: typed(d, "application/octet-stream"), size: sizeOf(d.fileLength) };
+}
 
 /** Markdown as WhatsApp writes it: *bold*, _italic_, ~strike~, links as "text (url)". */
 export function toWhatsApp(md: string): string {
@@ -177,15 +262,10 @@ export function whatsappAdapter(opts: {
   selfOwner?: boolean;
   log?: Log;
   lib?: () => Promise<WaLib>;
-  /** The groups the owner listed (rooms): only these are read; any other group does not exist for APX. */
-  rooms?: readonly string[];
   /** How long the phone has to send a message again (tests shorten it). */
   resendWaitMs?: number;
-  /** The clock of the id lookups' deadline (tests drive it). */
-  timers?: RunTimers;
 }): ChannelAdapter {
   const { dir, log } = opts;
-  const timers = opts.timers ?? wallTimers;
   let lib: WaLib | undefined;
   let sock: WaSocket | undefined;
   let io: AdapterIO | undefined;
@@ -211,9 +291,6 @@ export function whatsappAdapter(opts: {
   const menus = new Map<string, Menu>();
   /** Phone addresses checked on WhatsApp, and the address it uses for each. */
   const reach = new Map<string, string>();
-  const listed = new Set(opts.rooms ?? []);
-  /** Recent group messages, so an answer in the group can quote the one it answers. */
-  const quotable = new Map<string, WaMessage>();
 
   const hasCreds = () => fs.existsSync(path.join(dir, "creds.json"));
   const remember = (id: string | null | undefined) => {
@@ -251,12 +328,9 @@ export function whatsappAdapter(opts: {
       syncFullHistory: false,
     });
     sock = s;
-    s.ev.on("creds.update", ((update: { me?: { name?: string } } | undefined) => {
+    s.ev.on("creds.update", (() => {
       if (s !== sock || stopped) return;
       saving = saving.then(saveCreds, saveCreds);
-      // The profile name can arrive after the connection opens.
-      const name = update?.me?.name?.trim() || profileName(s);
-      if (me && name && name !== named) identify(s, name);
     }) as (arg: never) => void);
     s.ev.on("connection.update", ((u: ConnectionUpdate) => onConnection(s, u)) as (arg: never) => void);
     s.ev.on("messages.upsert", ((up: { type: string; messages: WaMessage[] }) => {
@@ -283,7 +357,8 @@ export function whatsappAdapter(opts: {
 
   async function onPresence(s: WaSocket, p: WaPresence): Promise<void> {
     for (const [jid, v] of Object.entries(p.presences)) {
-      const who = await numberOf(s, normalJid(jid), timers);
+      let who = normalJid(jid);
+      if (who.endsWith("@lid")) who = normalJid(await s.signalRepository?.lidMapping?.getPNForLID?.(who)) || who;
       if (!v.lastKnownPresence) continue;
       // Typing or recording is being there too.
       const online = v.lastKnownPresence !== "unavailable";
@@ -291,15 +366,6 @@ export function whatsappAdapter(opts: {
       const last = v.lastSeen ? new Date(v.lastSeen * 1000).toISOString() : online ? undefined : was?.last_seen;
       seen.set(who, { online, ...(last ? { last_seen: last } : {}) });
     }
-  }
-
-  /** Who the linked account is: its number, the owner's address on it, and its profile name once the phone shares it. */
-  let named: string | undefined;
-  const profileName = (s: WaSocket) => s.user?.name?.trim() || s.user?.verifiedName?.trim() || undefined;
-  function identify(s: WaSocket, name = profileName(s)): void {
-    if (!me) return;
-    named = name;
-    io?.identified?.({ account: `+${digitsOf(me.pn)}`, owner: me.pn, ...(named ? { name: named } : {}) });
   }
 
   function onConnection(s: WaSocket, u: ConnectionUpdate): void {
@@ -314,7 +380,7 @@ export function whatsappAdapter(opts: {
       qrRounds = 0;
       me = { pn: normalJid(s.user?.id), lid: normalJid(s.user?.lid) };
       io.status("running");
-      identify(s);
+      io.identified?.({ account: `+${digitsOf(me.pn)}`, owner: me.pn });
       return;
     }
     if (u.connection !== "close") return;
@@ -365,17 +431,14 @@ export function whatsappAdapter(opts: {
       return;
     }
     const group = jid.endsWith("@g.us");
-    if (group) return groupMessage(m, content, jid);
     if (m.key.fromMe) {
       // Our own send coming back, or someone typing on the linked phone to another chat: neither is for the agent.
       // "Message yourself" is the owner only when the line is the owner's own phone.
       if (ownSends.delete(m.key.id) || !isSelf(jid) || !opts.selfOwner) return;
     }
     const alt = normalJid(m.key.remoteJidAlt);
-    // One person, one address: their phone number when WhatsApp tells it or this device learned it, their private id
-    // otherwise.
-    const told = alt && isPhone(alt) ? alt : jid;
-    const who = m.key.fromMe ? me.pn : sock ? await numberOf(sock, told, timers) : told;
+    // One person, one address: their phone number when WhatsApp tells it, their private id otherwise.
+    const who = m.key.fromMe ? me.pn : isPhone(jid) ? jid : alt && isPhone(alt) ? alt : jid;
     const name = m.key.fromMe ? "Owner" : m.verifiedBizName?.trim() || m.pushName?.trim() || `+${digitsOf(who)}`;
     const reacted = content.reactionMessage;
     if (reacted) {
@@ -386,7 +449,7 @@ export function whatsappAdapter(opts: {
           sender: { id: who, name: name.slice(0, 80) },
           target: reacted.key.id,
           emoji: reacted.text ?? "",
-          private: true,
+          private: !group,
         });
       return;
     }
@@ -395,7 +458,7 @@ export function whatsappAdapter(opts: {
     const audio = content.audioMessage;
     let text = textOf(content) ?? "";
     let voice: { mime: string; data: string } | undefined;
-    if (audio && lib) {
+    if (audio && !group && lib) {
       try {
         const bytes = await lib.downloadMediaMessage(m, "buffer", {});
         if (bytes.length <= MAX_VOICE_BYTES)
@@ -410,7 +473,8 @@ export function whatsappAdapter(opts: {
     }
     const media = mediaOf(content);
     let files: Inbound["files"];
-    if (media) {
+    if (media && group) text ||= `[${media.kind}]`;
+    else if (media) {
       const got = await fileOf(m, media);
       if (got.file) files = [media.kind === "sticker" ? { ...got.file, sticker: {} } : got.file];
       else text = `${text}\n[attachment could not be downloaded: ${got.failure}]`.trim();
@@ -419,10 +483,12 @@ export function whatsappAdapter(opts: {
       if (!m.key.fromMe) log?.warn({ server, kinds: Object.keys(content).slice(0, 8) }, "whatsapp message not read");
       return;
     }
-    const menu = readMenu(content);
-    menus.delete(who);
-    if (menu?.options.length) menus.set(who, menu);
-    if (menus.size > CHATS_KEPT) menus.delete(menus.keys().next().value ?? "");
+    if (!group) {
+      const menu = readMenu(content);
+      menus.delete(who);
+      if (menu?.options.length) menus.set(who, menu);
+      if (menus.size > CHATS_KEPT) menus.delete(menus.keys().next().value ?? "");
+    }
     // A number answering the options offered here is that option, pressed.
     const choice = /^\s*(\d{1,2})\s*$/.exec(text)?.[1];
     const options = offered.get(who);
@@ -437,64 +503,10 @@ export function whatsappAdapter(opts: {
       conversation: who,
       sender: { id: who, name: name.slice(0, 80) },
       text,
-      private: true,
+      private: !group,
       ...(voice ? { voice } : {}),
       ...(files ? { files } : {}),
     });
-  }
-
-  /**
-   * A message in a group: handed over only from a listed one, as a room message (its words; a file or a voice note is
-   * named, not downloaded). On the owner's own phone what they type there is theirs, said in the room; on a line of its
-   * own, typing on its phone is nobody's. Whether it calls the agent: an @mention of the line or a reply to one of its
-   * messages, never on the owner's own phone (those are the owner's).
-   */
-  async function groupMessage(m: WaMessage, content: WaContent, jid: string): Promise<void> {
-    if (!io || !me || !m.key.id || !listed.has(jid) || content.reactionMessage) return;
-    if (m.key.fromMe && (ownSends.delete(m.key.id) || !opts.selfOwner)) return;
-    const alt = normalJid(m.key.participantAlt);
-    const told = alt && isPhone(alt) ? alt : normalJid(m.key.participant);
-    const who = m.key.fromMe ? me.pn : sock && told ? await numberOf(sock, told, timers) : told;
-    if (!who || ignorable(who)) return;
-    const media = mediaOf(content);
-    const said = textOf(content) ?? "";
-    const text = said || (content.audioMessage ? "[voice note]" : media ? `[${media.kind}]` : "");
-    if (!text.trim()) return;
-    const ctx = contextOf(content);
-    const line = [me.pn, me.lid].filter(Boolean);
-    const isLine = (j: string | null | undefined) => line.includes(normalJid(j));
-    const called =
-      !opts.selfOwner && !m.key.fromMe && Boolean(ctx?.mentionedJid?.some(isLine) || isLine(ctx?.participant));
-    // The @mention of the line itself says nothing: it is how it was called.
-    const own = called ? new RegExp(`@(${line.map(digitsOf).join("|")})\\b`, "g") : undefined;
-    quotable.set(m.key.id, m);
-    if (quotable.size > CHATS_KEPT) quotable.delete(quotable.keys().next().value ?? "");
-    const name = m.key.fromMe ? "Owner" : m.verifiedBizName?.trim() || m.pushName?.trim() || `+${digitsOf(who)}`;
-    io.receive({
-      external_id: m.key.id,
-      ref: m.key.id,
-      conversation: jid,
-      sender: { id: who, name: name.slice(0, 80), ...(isPhone(who) ? { handle: digitsOf(who) } : {}) },
-      text: (own ? text.replace(own, "") : text).trim() || text,
-      private: false,
-      room: { called },
-    });
-  }
-
-  /** The groups the account is in, to pick from: whether it may write in each (some let only admins). */
-  async function groups(): Promise<ServerRoom[]> {
-    const s = sock;
-    if (!s?.groupFetchAllParticipating || !me) return [];
-    const mine = [me.pn, me.lid].filter(Boolean);
-    const all = Object.values(await s.groupFetchAllParticipating());
-    return all
-      .filter((g) => !g.isCommunity)
-      .map((g) => {
-        const admin = (g.participants ?? []).some((p) => mine.includes(normalJid(p.id)) && Boolean(p.admin));
-        const id = normalJid(g.id);
-        return { id, name: (g.subject ?? "").trim().slice(0, 80) || id, server: "", writable: !g.announce || admin };
-      })
-      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /** A message's file, downloaded whole before it is stored (an expired link is asked of the sender's phone again). */
@@ -536,7 +548,7 @@ export function whatsappAdapter(opts: {
     wanted: Array<{ id: string; fromMe: boolean }>,
   ): Promise<Map<string, WaMessage>> {
     const lid = isPhone(conversation)
-      ? normalJid(await lookup(timers, s.signalRepository?.lidMapping?.getLIDForPN?.(conversation)))
+      ? normalJid(await s.signalRepository?.lidMapping?.getLIDForPN?.(conversation)?.catch(() => undefined))
       : "";
     const jidsOf = (id: string) => [
       ...new Set([chats.get(id), lid, conversation].filter((j): j is string => Boolean(j))),
@@ -600,14 +612,10 @@ export function whatsappAdapter(opts: {
     return there;
   }
 
-  async function sendOne(
-    jid: string,
-    content: Record<string, unknown>,
-    extra?: { quoted: WaMessage },
-  ): Promise<string | undefined> {
+  async function sendOne(jid: string, content: Record<string, unknown>): Promise<string | undefined> {
     if (!sock || !me) throw new SendError("retry", "WhatsApp is not connected");
     try {
-      const r = await (extra ? sock.sendMessage(jid, content, extra) : sock.sendMessage(jid, content));
+      const r = await sock.sendMessage(jid, content);
       const id = r?.key?.id ?? undefined;
       remember(id);
       return id;
@@ -685,12 +693,7 @@ export function whatsappAdapter(opts: {
       ]
         .filter(Boolean)
         .join("\n\n");
-      // In a group the first words quote the message they answer, and the people named as @number are mentioned.
-      const quoted = p.reply_to ? quotable.get(p.reply_to) : undefined;
-      const mentions = p.mentions?.length ? { mentions: p.mentions.map((x) => x.id) } : {};
-      const texts = (body ? chunks(body, 4000) : []).map(
-        (t, i) => () => sendOne(conversation, { text: t, ...mentions }, i === 0 && quoted ? { quoted } : undefined),
-      );
+      const texts = (body ? chunks(body, 4000) : []).map((t) => () => sendOne(conversation, { text: t }));
       const media = files.map((f) => () => sendOne(conversation, fileContent(f)));
       // A voice note goes before the words it says.
       const steps: Array<() => Promise<string | undefined>> = p.mediaFirst
@@ -707,17 +710,6 @@ export function whatsappAdapter(opts: {
       }
       if (options) offered.set(conversation, options);
       return last ? { external_id: last, ...moved } : moved;
-    },
-    rooms: groups,
-    async sameAs(addresses) {
-      const s = sock;
-      if (!s) return [];
-      const out: Array<{ from: string; to: string }> = [];
-      for (const from of addresses) {
-        const to = await numberOf(s, from, timers);
-        if (to !== from) out.push({ from, to });
-      }
-      return out;
     },
     async avatar(jid) {
       if (!sock?.profilePictureUrl) return undefined;
