@@ -7,9 +7,11 @@ on:
       previous:
         description: Previous published version, without v
         required: true
+        type: string
       target:
         description: Candidate minor version, without v
         required: true
+        type: string
 
 permissions:
   contents: read
