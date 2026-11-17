@@ -35,6 +35,19 @@ async function rpc<T>(method: string, params: unknown = {}): Promise<T> {
   return body.result;
 }
 
+async function warmTurnPath(): Promise<void> {
+  await rpc("models.set_config", { default: { model: "custom/fake-1", router: false } });
+  const thread = await rpc<{ id: string }>("threads.create", { kind: "agent", agent_id: "superagent" });
+  for (let i = 0; i < WARMUP_TURNS; i++) {
+    const { run } = await rpc<{ run: { id: string } }>("threads.send", {
+      thread: thread.id,
+      text: `warmup ${i}`,
+    });
+    const done = await rpc<{ state: string }>("runs.wait", { run: run.id, timeout_s: 30 });
+    if (done.state !== "completed") throw new Error(`warmup turn ${i} ended ${done.state}`);
+  }
+}
+
 /** RSS in MB and CPU seconds of a process, from ps (macOS and Linux). */
 async function usage(pid: number): Promise<{ rss: number; cpu: number }> {
   const out = await new Promise<string>((resolve) => {
@@ -106,6 +119,9 @@ for (let i = 0; i < 300; i++) {
   } catch {}
   await sleep(50);
 }
+// The turn loop loads paths that startup does not. Warm them in the disposable core as well, so the measured core
+// has the same filesystem and compile-cache state on a fresh runner as it has on an immediate diagnostic rerun.
+await warmTurnPath();
 warm.kill("SIGTERM");
 await new Promise((r) => warm.once("exit", r));
 
@@ -179,17 +195,8 @@ try {
   results.rpc_p95_ms = pct(lat, 0.95);
 
   // Turns: the whole path but the model (context, tools, persistence, events).
-  await rpc("models.set_config", { default: { model: "custom/fake-1", router: false } });
-  const warmupThread = await rpc<{ id: string }>("threads.create", { kind: "agent", agent_id: "superagent" });
   // Compile and initialize the complete turn path before measuring steady-state latency. Startup has its own budget.
-  for (let i = 0; i < WARMUP_TURNS; i++) {
-    const { run } = await rpc<{ run: { id: string } }>("threads.send", {
-      thread: warmupThread.id,
-      text: `warmup ${i}`,
-    });
-    const done = await rpc<{ state: string }>("runs.wait", { run: run.id, timeout_s: 30 });
-    if (done.state !== "completed") throw new Error(`warmup turn ${i} ended ${done.state}`);
-  }
+  await warmTurnPath();
   const thread = await rpc<{ id: string }>("threads.create", { kind: "agent", agent_id: "superagent" });
   const turns: number[] = [];
   for (let i = 0; i < TURNS; i++) {
